@@ -171,6 +171,13 @@ def main() -> int:
     ap.add_argument("--taubin", type=int, default=30, help="surface_cleaner smoothing iterations")
     ap.add_argument("--min-faces", type=int, default=1000, help="drop components smaller than this")
     ap.add_argument(
+        "--decimate",
+        type=float,
+        default=0.0,
+        help="quadric-decimate final surfaces to this FRACTION of faces "
+        "(0.5 = keep 50%%; 0 = off)",
+    )
+    ap.add_argument(
         "--seal-tunnels",
         dest="seal_tunnels",
         action="store_true",
@@ -202,6 +209,15 @@ def main() -> int:
         help="voxels an outer tissue must extend beyond its children so the "
         "smoothed surfaces never cross (0 disables; prevents skull poking "
         "through skin). Default 1.",
+    )
+    ap.add_argument(
+        "--crop-recess",
+        type=int,
+        default=-1,
+        help="voxels to pull inner tissues back from any array border they touch "
+        "so the root tissue alone caps a crop plane (stops inner cut-faces "
+        "showing flush through the skin cut-face). -1 = auto (=nest-margin), "
+        "0 disables.",
     )
     ap.add_argument(
         "--cgal-python", default=r"C:\Users\4elodoy Molovek\.conda\envs\cgal_env\python.exe"
@@ -322,6 +338,27 @@ def main() -> int:
                         f"{names.get(L, L)}+{args.nest_margin}"
                     )
 
+    # 2b) recess inner tissues from the array borders so the ROOT (skin) alone
+    #     caps a crop plane. Where the volume is cut (e.g. y_end), skin and skull
+    #     are otherwise capped in the SAME plane (coplanar) — the skull cut-face
+    #     then shows flush through the skin cut-face and reads as "poking through".
+    #     Pulling non-root tissues back a few voxels from any border they touch
+    #     lets skin's cap sit in front. No-op for a fully-enclosed volume.
+    recess = args.crop_recess if args.crop_recess >= 0 else max(args.nest_margin, 1)
+    if recess > 0:
+        b = np.zeros(vol.shape, dtype=bool)
+        b[:recess] = b[-recess:] = True
+        b[:, :recess] = b[:, -recess:] = True
+        b[:, :, :recess] = b[:, :, -recess:] = True
+        for L in labels:
+            if parent.get(L, 0) != 0 and bool((regions[L] & b).any()):
+                before = int(regions[L].sum())
+                regions[L] = regions[L] & ~b
+                print(
+                    f"    crop-recess: {names.get(L, L)} pulled {recess} vox off the "
+                    f"crop border (-{before - int(regions[L].sum())} vox)"
+                )
+
     # 3) write region volumes (sequential, cheap)
     for L in labels:
         np.save(os.path.join(work, f"env_{L}.npy"), regions[L].astype(np.uint8))
@@ -408,6 +445,8 @@ def main() -> int:
                 str(args.taubin),
                 "--min-faces",
                 str(args.min_faces),
+                "--decimate",
+                str(args.decimate),
                 "--jobs",
                 str(args.jobs),
             ],

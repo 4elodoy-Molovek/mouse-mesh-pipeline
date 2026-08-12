@@ -122,6 +122,8 @@ class PipelineApp:
         self.env_nest_margin_var = tk.IntVar(value=1)
         # Параллельное меширование тканей (0 = авто ~половина ядер).
         self.env_jobs_var = tk.IntVar(value=0)
+        # Децимация итоговых поверхностей (доля граней; 0.5 = 50%, 0 = выкл).
+        self.env_decimate_var = tk.DoubleVar(value=0.0)
 
         # --- Постобработка поверхностей (surface_cleaner) ---
         self.surf_clean_var = tk.BooleanVar(value=True)
@@ -425,6 +427,11 @@ class PipelineApp:
         self._param_row(
             self._env_frame, "Параллельных задач (0 = авто, ~½ ядер):", self.env_jobs_var
         )
+        self._param_row(
+            self._env_frame,
+            "Децимация итоговых мешей (0.5 = 50%, 0 = выкл):",
+            self.env_decimate_var,
+        )
         tk.Label(
             self._env_frame,
             justify="left",
@@ -536,6 +543,7 @@ class PipelineApp:
         self.env_seal_radius_var.set(int(cfg.get("envelope_seal_radius", 2)))
         self.env_nest_margin_var.set(int(cfg.get("envelope_nest_margin", 1)))
         self.env_jobs_var.set(int(cfg.get("envelope_jobs", 0)))
+        self.env_decimate_var.set(float(cfg.get("envelope_decimate", 0.0)))
         self._log(f"--- Конфиг загружен: {path} ---", "ok")
 
     # ──────────────────────────────────────── Log system ──
@@ -636,6 +644,7 @@ class PipelineApp:
                 "envelope_seal_radius": self.env_seal_radius_var.get(),
                 "envelope_nest_margin": self.env_nest_margin_var.get(),
                 "envelope_jobs": self.env_jobs_var.get(),
+                "envelope_decimate": self.env_decimate_var.get(),
             }
         )
         with open(config_path, "w", encoding="utf-8") as f:
@@ -735,6 +744,8 @@ class PipelineApp:
                     str(self.env_nest_margin_var.get()),
                     "--jobs",
                     str(self.env_jobs_var.get()),
+                    "--decimate",
+                    str(self.env_decimate_var.get()),
                 ]
             )
             if not self.env_seal_var.get():

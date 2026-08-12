@@ -38,5 +38,7 @@
     "envelope_taubin": 40,
     "envelope_seal_tunnels": true,
     "envelope_seal_radius": 2,
-    "envelope_nest_margin": 2
+    "envelope_nest_margin": 2,
+    "envelope_jobs": 1,
+    "envelope_decimate": 0.5
 }

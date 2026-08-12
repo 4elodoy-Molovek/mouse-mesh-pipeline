@@ -124,17 +124,24 @@ def _seal_per_component(P, F):
 
 def _clean_file(job):
     """Worker for parallel cleaning (module-level so it pickles on Windows spawn).
-    job = (src_path, out_dir, target, taubin, min_faces, remesh, seal)."""
+    job = (src_path, out_dir, target, taubin, min_faces, remesh, seal, decimate)."""
     import meshio
 
-    s, out, target, taubin, min_faces, remesh, seal = job
+    s, out, target, taubin, min_faces, remesh, seal, decimate = job
     name = os.path.basename(s)
     P, F = _tri(s)
     if P is None:
         return (name, None, None)
     before = _metrics(P, F)
     P2, F2 = clean_surface(
-        P, F, target=target, taubin=taubin, min_faces=min_faces, remesh=remesh, seal=seal
+        P,
+        F,
+        target=target,
+        taubin=taubin,
+        min_faces=min_faces,
+        remesh=remesh,
+        seal=seal,
+        decimate=decimate,
     )
     after = _metrics(P2, F2)
     meshio.write(
@@ -143,7 +150,9 @@ def _clean_file(job):
     return (name, before, after)
 
 
-def clean_surface(P, F, target=0.0, taubin=30, min_faces=1000, remesh=False, seal=True):
+def clean_surface(
+    P, F, target=0.0, taubin=30, min_faces=1000, remesh=False, seal=True, decimate=0.0
+):
     import pymeshlab
 
     # 1) dedup + drop tiny flying fragments
@@ -171,6 +180,21 @@ def clean_surface(P, F, target=0.0, taubin=30, min_faces=1000, remesh=False, sea
     ms2 = pymeshlab.MeshSet()
     ms2.add_mesh(pymeshlab.Mesh(P.astype(np.float64), F.astype(np.int32)), "s")
     ms2.apply_coord_taubin_smoothing(stepsmoothnum=int(taubin))
+    if 0.0 < decimate < 1.0:
+        # Quadric edge-collapse to `decimate` * face count. Preserve topology,
+        # boundary and normals so the surface stays watertight/manifold with
+        # outward winding; planar quadric keeps flat caps (the crop face) crisp.
+        try:
+            ms2.meshing_decimation_quadric_edge_collapse(
+                targetperc=float(decimate),
+                preservetopology=True,
+                preserveboundary=True,
+                preservenormal=True,
+                planarquadric=True,
+                autoclean=True,
+            )
+        except Exception as exc:
+            print("   [warn] decimate:", exc)
     if remesh:
         tl = pymeshlab.PureValue(target) if target > 0 else pymeshlab.PercentageValue(1.0)
         try:
@@ -210,6 +234,13 @@ def main() -> int:
     )
     ap.add_argument("--target", type=float, default=0.0, help="remesh target edge (mm; 0=auto)")
     ap.add_argument(
+        "--decimate",
+        type=float,
+        default=0.0,
+        help="quadric-decimate to this FRACTION of faces (0.5 = keep 50%%; "
+        "0 = off). Preserves watertight/manifold/outward normals.",
+    )
+    ap.add_argument(
         "--jobs",
         type=int,
         default=0,
@@ -235,7 +266,16 @@ def main() -> int:
     jobs = args.jobs or max(1, min(len(surfs), (os.cpu_count() or 4) // 2))
     print(f"Чистка {len(surfs)} поверхностей ({jobs} параллельно): {src}")
     jobargs = [
-        (s, out, args.target, args.taubin, args.min_faces, args.remesh, not args.no_seal)
+        (
+            s,
+            out,
+            args.target,
+            args.taubin,
+            args.min_faces,
+            args.remesh,
+            not args.no_seal,
+            args.decimate,
+        )
         for s in surfs
     ]
     if jobs == 1:

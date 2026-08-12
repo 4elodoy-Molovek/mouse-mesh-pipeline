@@ -86,7 +86,9 @@ Key knobs:
 - `--facet-size` — surface detail (≈ voxel size is the sweet spot; finer just adds staircase).
 - `--seal-tunnels` / `--seal-open-radius` — close see-through "arch" tunnels (skin genus → 0).
 - `--nest-margin` — voxels an outer tissue must extend beyond its children so smoothed surfaces never cross (skull can't poke through skin).
-- `--jobs` — parallel per-tissue meshing.
+- `--crop-recess` — pull inner tissues back from a crop plane so the skin alone caps the cut face (auto = nest-margin).
+- `--decimate` — quadric-decimate the final surfaces to this fraction of faces (`0.5` = 50 %; watertight/nesting preserved).
+- `--jobs` — parallel per-tissue meshing (use `--jobs 1` with the TBB exe).
 
 Or run everything from the GUI: `python pipeline_manager.py` → mode **«Оболочки»**.
 
