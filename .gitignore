@@ -1,0 +1,41 @@
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+env/
+.ipynb_checkpoints/
+
+# ── Native build artifacts ───────────────────────────────
+*.exe
+*.o
+*.obj
+*.dll
+cgal_remesh/build/
+cgal_remesh/*.exe
+
+# ── CGAL headers (downloaded, header-only ~200 MB) ───────
+CGAL-*/
+*.tar.xz
+
+# ── Data / intermediates (never committed — machine-local) ─
+*.npy
+*.inr
+*.mesh
+*.vtk
+*.node
+*.elem
+*.png
+save_data/
+CRI_Data/
+
+# ── Doxygen output ───────────────────────────────────────
+docs/html/
+docs/latex/
+docs/xml/
+
+# ── OS / editor ──────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

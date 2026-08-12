@@ -1,0 +1,12 @@
+# Normalize line endings: LF in the repo for everything text, except Windows
+# scripts which stay CRLF.
+* text=auto eol=lf
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Binary-ish / generated — never diff or normalize.
+*.png  binary
+*.npy  binary
+*.mesh binary
+*.inr  binary

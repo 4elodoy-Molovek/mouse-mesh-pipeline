@@ -1,0 +1,13 @@
+{
+    "info_txt": "G:/nauchka/utilities/CRI_Data/mouse/atlas/INFO.txt",
+    "input_volume": "G:/nauchka/utilities/CRI_Data/mouse/atlas/atlas_380x992x208.npy",
+    "output_dir": "G:/nauchka/utilities/CRI_Data/mouse/atlas/save_data",
+    "z_cut_mm": -40.0,
+    "min_voxels": 10000,
+    "target_faces": 100000,
+    "use_smooth_mc": true,
+    "calc_metrics": true,
+    "workers": 6,
+    "cgal_max_radius": 3.0,
+    "cgal_facet_dist": 0.5
+}

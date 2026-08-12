@@ -1,0 +1,12 @@
+# Pip-installable libraries for the MAIN environment (regular pipeline + GUI).
+# The scientific base (numpy/scipy/pandas/tqdm) is installed via conda by
+# setup_main_env.ps1 for MKL-accelerated builds; these are the rest.
+matplotlib==3.10.7
+vtk==9.5.2
+trimesh==4.11.2
+pymeshlab==2025.7.post1
+pymeshfix==0.18.1
+meshio==5.3.5
+manifold3d==3.4.0
+rtree==1.4.1
+pillow==12.0.0

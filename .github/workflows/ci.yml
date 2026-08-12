@@ -1,0 +1,109 @@
+# CI for mouse-mesh-pipeline.
+# GitHub Actions syntax; runs unchanged on Gitea Actions (act_runner).
+# Three jobs: Python lint+compile, Doxygen docs, and the C++ CGAL build
+# (sequential + TBB-parallel), against the exact CGAL 6.0.1 headers the project
+# pins — so CI validates the TBB build path even though the local MSYS2 toolchain
+# can't (its gcc 13 conflicts with the current tbb package).
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Lint, format & compile (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install tools
+        run: python -m pip install --upgrade pip ruff black clang-format
+      - name: Lint (real errors only — syntax, undefined names)
+        run: ruff check --select E9,F63,F7,F82 .
+      - name: Format check (black)
+        run: black --check --diff .
+      - name: Format check (clang-format)
+        run: clang-format --dry-run --Werror cgal_remesh/*.cpp
+      - name: Byte-compile every module
+        run: python -m py_compile $(git ls-files '*.py')
+
+  docs:
+    name: Doxygen documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Doxygen + Graphviz
+        run: sudo apt-get update && sudo apt-get install -y doxygen graphviz
+      - name: Build docs
+        run: doxygen Doxyfile
+      - name: Upload HTML docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: doxygen-html
+          path: docs/html
+
+  cpp:
+    name: Build C++ (CGAL 6.0.1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain + CGAL deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ libgmp-dev libmpfr-dev libboost-dev \
+                                  libeigen3-dev libtbb-dev wget xz-utils
+      - name: Fetch CGAL 6.0.1 headers (header-only, matches the pinned version)
+        run: |
+          wget -q https://github.com/CGAL/cgal/releases/download/v6.0.1/CGAL-6.0.1-library.tar.xz
+          tar xf CGAL-6.0.1-library.tar.xz
+      - name: Build sequential
+        run: |
+          cd cgal_remesh
+          g++ -O2 -std=c++17 -I../CGAL-6.0.1/include mesh_and_remesh.cpp -lgmp -lmpfr -o mesh_and_remesh
+          g++ -O2 -std=c++17 -I../CGAL-6.0.1/include tet_remesh.cpp       -lgmp -lmpfr -o tet_remesh
+      - name: Build TBB-parallel Mesh_3
+        run: |
+          cd cgal_remesh
+          # CGAL's parallel Mesh_3 needs both TBB core and tbbmalloc
+          # (scalable_allocator -> scalable_malloc/free).
+          g++ -O2 -std=c++17 -DCGAL_LINKED_WITH_TBB -I../CGAL-6.0.1/include \
+              mesh_and_remesh.cpp -lgmp -lmpfr -ltbb -ltbbmalloc -o mesh_and_remesh_tbb
+      - name: Smoke-test the binaries run
+        run: |
+          ./cgal_remesh/mesh_and_remesh --help || ./cgal_remesh/mesh_and_remesh || true
+
+  # Publish the Doxygen HTML to GitHub Pages (default branch only). On Gitea,
+  # this deploy step is a no-op (the actions aren't provided) — use the
+  # `doxygen-html` artifact above, or Gitea Pages served from a branch.
+  pages:
+    name: Deploy docs to Pages
+    needs: docs
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Doxygen + Graphviz
+        run: sudo apt-get update && sudo apt-get install -y doxygen graphviz
+      - name: Build docs
+        run: doxygen Doxyfile
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/html
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

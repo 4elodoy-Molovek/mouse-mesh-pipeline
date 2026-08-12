@@ -1,0 +1,45 @@
+# Doxygen configuration for mouse-mesh-pipeline.
+# Documents both the C++ CGAL tools and the Python pipeline (Doxygen reads
+# Python docstrings natively). Build:  doxygen Doxyfile   ->  docs/html/index.html
+
+PROJECT_NAME           = "mouse-mesh-pipeline"
+PROJECT_BRIEF          = "Labeled voxel atlas -> nested tissue surfaces / tet meshes for surface-based Monte Carlo light transport"
+OUTPUT_DIRECTORY       = docs
+HTML_OUTPUT            = html
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+
+# --- inputs ---------------------------------------------------------------
+INPUT                  = . cgal_remesh README.md
+FILE_PATTERNS          = *.py *.cpp *.h *.hpp
+RECURSIVE              = NO
+EXCLUDE                = scripts configs docs env CGAL-6.0.1
+EXCLUDE_PATTERNS       = */__pycache__/* */.git/*
+USE_MDFILE_AS_MAINPAGE = README.md
+
+# --- extraction -----------------------------------------------------------
+# The code uses ordinary docstrings/comments (not \brief tags), so extract
+# everything and treat the leading comment/docstring as the brief.
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
+JAVADOC_AUTOBRIEF      = YES
+PYTHON_DOCSTRING       = YES
+OPTIMIZE_OUTPUT_JAVA   = NO
+MARKDOWN_SUPPORT       = YES
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+# --- diagrams (graphviz if available in CI) -------------------------------
+HAVE_DOT               = YES
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+CLASS_GRAPH            = YES
+DOT_IMAGE_FORMAT       = svg
+
+# --- noise control --------------------------------------------------------
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_AS_ERROR          = NO

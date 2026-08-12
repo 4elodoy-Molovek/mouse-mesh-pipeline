@@ -1,0 +1,7 @@
+# Pip-only libraries for the CGAL environment.
+# pygalmesh, meshio, scipy, numpy, pyvista, vtk, networkx and rtree come from
+# conda-forge (see setup_cgal_env.ps1) because pygalmesh needs CGAL/Eigen/MPFR
+# native libraries that conda-forge provides automatically.
+pymeshfix==0.18.1
+fast-simplification==0.1.13
+trimesh==4.12.2
