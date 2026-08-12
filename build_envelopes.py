@@ -220,7 +220,9 @@ def main() -> int:
         "0 disables.",
     )
     ap.add_argument(
-        "--cgal-python", default=r"C:\Users\4elodoy Molovek\.conda\envs\cgal_env\python.exe"
+        "--cgal-python",
+        default="",
+        help="DEPRECATED / unused — npy2inr is now pure NumPy in the main env",
     )
     ap.add_argument("--exe", help="mesh_and_remesh.exe (default from config remesh_exe)")
     ap.add_argument("--msys2-bin", help="MSYS2 ucrt64 bin for DLLs (default from config msys2_bin)")
@@ -375,9 +377,11 @@ def main() -> int:
             npy_p = os.path.join(work, f"env_{L}.npy")
             inr_p = os.path.join(work, f"env_{L}.inr")
             mesh_p = os.path.join(work, f"env_{L}.mesh")
+            # npy2inr is now pure NumPy (native .inr writer) -> run it in THIS
+            # (main) interpreter; no pygalmesh / cgal_env needed.
             subprocess.run(
                 [
-                    args.cgal_python,
+                    sys.executable,
                     npy2inr,
                     "--npy",
                     npy_p,

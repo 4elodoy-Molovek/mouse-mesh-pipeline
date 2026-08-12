@@ -3,10 +3,10 @@
 Convert a labeled .npy volume to an uncompressed INRIMAGE (.inr) that the
 CGAL C++ tool (mesh_and_remesh) reads via CGAL::Image_3.
 
-Runs in the cgal_env (uses pygalmesh.save_inr, the exact writer CGAL's own
-Mesh_3 examples consume). Spacing is taken from INFO.txt (dz, dy, dx) to match
-the (nZ, nY, nX) array order, so the .inr voxel sizes line up with the rest of
-the pipeline.
+Pure NumPy — the .inr writer here is byte-for-byte identical to pygalmesh's, so
+this runs in the MAIN env (no pygalmesh / cgal_env needed). Spacing is taken from
+INFO.txt (dz, dy, dx) to match the (nZ, nY, nX) array order, so the .inr voxel
+sizes line up with the rest of the pipeline.
 
 Usage:
     python npy2inr.py --config pipeline_config_mouse.json [--out path.inr]
@@ -21,6 +21,35 @@ import os
 import sys
 
 import numpy as np
+
+
+def save_inr(vol: np.ndarray, spacing, path: str) -> None:
+    """Write a labeled 3-D uint8/uint16 array as an uncompressed INRIMAGE (.inr),
+    the format CGAL's Image_3 / Mesh_3 reads. Pure NumPy — byte-for-byte identical
+    to pygalmesh.save_inr (verified), so no pygalmesh / cgal_env is needed.
+
+    The 256-byte ASCII header maps XDIM<-shape[0], YDIM<-shape[1], ZDIM<-shape[2]
+    with voxel sizes VX,VY,VZ = spacing; voxels are stored X-fastest (Fortran
+    order of the (nZ,nY,nX) array), matching the rest of the pipeline's axis
+    convention (spacing = (dz,dy,dx))."""
+    vol = np.ascontiguousarray(vol)
+    if vol.ndim != 3:
+        raise ValueError(f"expected a 3-D array, got shape {vol.shape}")
+    if vol.dtype == np.uint8:
+        pixsize = 8
+    elif vol.dtype == np.uint16:
+        pixsize = 16
+    else:
+        raise ValueError(f"INR needs uint8/uint16, got {vol.dtype}")
+    h = "#INRIMAGE-4#{\n"
+    h += f"XDIM={vol.shape[0]}\nYDIM={vol.shape[1]}\nZDIM={vol.shape[2]}\nVDIM=1\n"
+    h += f"TYPE=unsigned fixed\nPIXSIZE={pixsize} bits\nCPU=decm\n"
+    h += f"VX={spacing[0]:.6f}\nVY={spacing[1]:.6f}\nVZ={spacing[2]:.6f}\n"
+    h += "\n" * (256 - len(h) - 4) + "##}\n"
+    assert len(h) == 256, len(h)
+    with open(path, "wb") as f:
+        f.write(h.encode("ascii"))
+        f.write(vol.tobytes(order="F"))
 
 
 def main() -> int:
@@ -38,12 +67,6 @@ def main() -> int:
         "--out", help="output .inr path (default: <output_dir>/vtk_export/conformal/volume.inr)"
     )
     args = ap.parse_args()
-
-    try:
-        import pygalmesh
-    except ImportError:
-        print("npy2inr requires pygalmesh (run in cgal_env).", file=sys.stderr)
-        return 2
 
     spacing = tuple(args.spacing) if args.spacing else None
     out = args.out
@@ -79,7 +102,7 @@ def main() -> int:
     vol = np.ascontiguousarray(vol.astype(dtype))
 
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-    pygalmesh.save_inr(vol, [float(s) for s in spacing], out)
+    save_inr(vol, [float(s) for s in spacing], out)
 
     labels = sorted(int(l) for l in np.unique(vol))
     print(f"wrote {out}")

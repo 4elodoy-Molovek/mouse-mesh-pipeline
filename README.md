@@ -50,9 +50,19 @@ mesh mode, cleaning) with the right interpreters and DLL paths.
 | `docs/` | audit report; Doxygen HTML lands in `docs/html/` |
 | `.github/workflows/ci.yml` | CI: Python lint+compile, Doxygen, C++ build (GitHub / Gitea) |
 
-## Install
+## Install — one click (Windows)
 
-Two conda environments (numpy/scipy MKL base + pip extras):
+Grab **`mouse-mesh-pipeline-setup.exe`** (CI artifact of the `installer` job, or
+`installer\build.ps1` locally) and run it. On a machine that already has
+**Python 3.10+**, it deploys the pipeline, `pip install`s the dependencies, ships
+the prebuilt C++ `mesh_and_remesh.exe` (+ DLLs, no MSYS2 needed), and drops a
+desktop shortcut. The envelope pipeline needs no conda/pygalmesh — `npy2inr`
+writes the `.inr` in pure NumPy.
+
+## Install — from source
+
+Two conda environments (numpy/scipy MKL base + pip extras); the `cgal_env` is
+only needed for the legacy pygalmesh `cgal` mesh mode, NOT for envelopes:
 
 ```powershell
 # main env (pipeline + GUI): numpy, scipy, meshio, trimesh, pymeshlab, pymeshfix, vtk …
@@ -128,11 +138,12 @@ CI builds this on every push and uploads it as the `doxygen-html` artifact.
 
 ## CI (GitHub / Gitea)
 
-`.github/workflows/ci.yml` runs four jobs:
+`.github/workflows/ci.yml` runs five jobs:
 - **python** — ruff error-lint, `black --check` + `clang-format` format check, byte-compile every module.
 - **docs** — build Doxygen HTML, upload as the `doxygen-html` artifact.
 - **cpp** — build sequential + TBB against the pinned CGAL 6.0.1.
 - **pages** — deploy the Doxygen HTML to GitHub Pages (default branch only).
+- **installer** — freeze `mouse-mesh-pipeline-setup.exe` (windows-latest) and upload it.
 
 Formatting is enforced by `black` (`pyproject.toml`, line length 100) and
 `clang-format` (`.clang-format`). The syntax is standard GitHub Actions and runs

@@ -107,3 +107,24 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
+
+  # Freeze the GUI+pipeline installer (mouse-mesh-pipeline-setup.exe) on Windows.
+  # Bundles the prebuilt C++ binaries from bin/win64/; heavy Python libs are
+  # pip-installed on the target machine at install time (not frozen).
+  installer:
+    name: Windows installer (PyInstaller)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+      - name: Build installer
+        run: powershell -ExecutionPolicy Bypass -File installer/build.ps1
+      - name: Upload installer exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: mouse-mesh-pipeline-setup
+          path: installer/dist/mouse-mesh-pipeline-setup.exe

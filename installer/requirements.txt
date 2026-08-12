@@ -1,0 +1,16 @@
+# Full pip dependency set for a plain (non-conda) install of the pipeline + GUI.
+# The scientific base that setup_main_env.ps1 installs via conda is listed here
+# too, so `pip install -r` alone brings up a working environment.
+numpy>=1.26,<3
+scipy>=1.11
+pandas>=2.0
+tqdm>=4.66
+matplotlib==3.10.7
+vtk==9.5.2
+trimesh==4.11.2
+pymeshlab==2025.7.post1
+pymeshfix==0.18.1
+meshio==5.3.5
+manifold3d==3.4.0
+rtree==1.4.1
+pillow==12.0.0

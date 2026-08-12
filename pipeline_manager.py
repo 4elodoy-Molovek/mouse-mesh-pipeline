@@ -791,12 +791,11 @@ class PipelineApp:
         inr = os.path.join(conformal, "volume.inr")
         mesh = os.path.join(conformal, "brain_full_conformal.mesh")
         npy2inr = os.path.join("cgal_remesh", "npy2inr.py")
-        cgal_py = self.cgal_python_var.get().strip() or py
         exe = self.rm_exe_var.get().strip()
         msys_bin = self.rm_msys2_bin_var.get().strip()
 
-        # 1) .npy → .inr  (cgal_env: pygalmesh.save_inr)
-        t1 = ("npy2inr.py", [cgal_py, npy2inr] + cfg_arg + ["--out", inr], {}, npy2inr)
+        # 1) .npy → .inr  (pure NumPy native writer — main env, no pygalmesh)
+        t1 = ("npy2inr.py", [py, npy2inr] + cfg_arg + ["--out", inr], {}, npy2inr)
 
         # 2) mesh_and_remesh.exe — нативный, нужны DLL из MSYS2 ucrt64\bin на PATH
         exe_args = [

@@ -14,6 +14,16 @@ env/
 cgal_remesh/build/
 cgal_remesh/*.exe
 
+# …but DO ship the prebuilt Windows binaries the installer bundles.
+!bin/win64/
+!bin/win64/*.exe
+!bin/win64/*.dll
+
+# PyInstaller work dirs
+installer/build/
+installer/dist/
+installer/*.spec.bak
+
 # ── CGAL headers (downloaded, header-only ~200 MB) ───────
 CGAL-*/
 *.tar.xz
@@ -39,3 +49,4 @@ docs/xml/
 Thumbs.db
 .vscode/
 .idea/
+installer/payload/
