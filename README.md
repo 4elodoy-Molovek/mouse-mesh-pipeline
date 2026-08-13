@@ -54,9 +54,10 @@ mesh mode, cleaning) with the right interpreters and DLL paths.
 
 Grab **`mouse-mesh-pipeline-setup.exe`** (CI artifact of the `installer` job, or
 `installer\build.ps1` locally) and run it. On a machine that already has
-**Python 3.10+**, it deploys the pipeline, `pip install`s the dependencies, ships
-the prebuilt C++ `mesh_and_remesh.exe` (+ DLLs, no MSYS2 needed), and drops a
-desktop shortcut. The envelope pipeline needs no conda/pygalmesh — `npy2inr`
+**Python 3.10+**, it deploys the pipeline, creates a **dedicated venv** and
+pip-installs the dependencies into it (your system Python is never touched),
+ships the prebuilt C++ `mesh_and_remesh.exe` (+ DLLs, no MSYS2 needed), and drops
+a desktop shortcut. The envelope pipeline needs no conda/pygalmesh — `npy2inr`
 writes the `.inr` in pure NumPy.
 
 ## Install — from source

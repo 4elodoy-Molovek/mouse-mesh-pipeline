@@ -7,13 +7,14 @@ the whole pipeline (Python scripts + configs + the prebuilt Windows C++ binaries
 and their DLLs) as a `payload/` folder. On run it:
 
   1. copies the pipeline into a target folder,
-  2. installs the Python dependencies into the machine's own Python (pip),
+  2. creates a dedicated venv there and pip-installs the dependencies INTO IT
+     (the machine's own Python is never modified),
   3. points the config at the bundled mesh_and_remesh.exe,
-  4. drops a "Launch GUI" .bat and a desktop shortcut.
+  4. drops a "Launch GUI" .bat (running the venv's pythonw) and a desktop shortcut.
 
 Requires Python 3.10+ already installed on the target machine (the exe itself is
-tiny — the heavy libraries come from PyPI wheels at install time, which is far
-more robust than freezing vtk/pymeshlab).
+tiny — the heavy libraries come from PyPI wheels at install time into the venv,
+which is far more robust than freezing vtk/pymeshlab).
 """
 
 import json
@@ -108,11 +109,21 @@ def install(dest: str, log):
         )
     log(f"Системный Python: {pyexe}")
 
-    log("Обновляю pip...")
-    subprocess.run(pyc + ["-m", "pip", "install", "--upgrade", "pip"], check=False)
-    log("Устанавливаю зависимости (numpy/scipy/vtk/pymeshlab/...). Несколько минут...")
+    # Isolate everything in a dedicated venv inside the install folder — the
+    # system Python is never touched.
+    venv_dir = os.path.join(dest, ".venv")
+    log("Создаю изолированное окружение (venv)...")
+    rc = subprocess.run(pyc + ["-m", "venv", venv_dir])
+    if rc.returncode != 0:
+        raise RuntimeError("не удалось создать venv (нужен модуль venv в системном Python).")
+    vpy = os.path.join(venv_dir, "Scripts", "python.exe")
+    vpyw = os.path.join(venv_dir, "Scripts", "pythonw.exe")
+
+    log("Обновляю pip в venv...")
+    subprocess.run([vpy, "-m", "pip", "install", "--upgrade", "pip"], check=False)
+    log("Устанавливаю зависимости в venv (numpy/scipy/vtk/pymeshlab/...). Несколько минут...")
     req = os.path.join(dest, "requirements.txt")
-    rc = subprocess.run(pyc + ["-m", "pip", "install", "-r", req])
+    rc = subprocess.run([vpy, "-m", "pip", "install", "-r", req])
     if rc.returncode != 0:
         raise RuntimeError("pip install завершился с ошибкой.")
 
@@ -121,7 +132,7 @@ def install(dest: str, log):
     bat = os.path.join(dest, "Launch GUI.bat")
     with open(bat, "w", encoding="utf-8") as f:
         f.write('@echo off\r\ncd /d "%~dp0"\r\n')
-        f.write(" ".join(pyc) + "w pipeline_manager.py\r\n")
+        f.write(f'"{vpyw}" pipeline_manager.py\r\n')
     log(f"Лаунчер: {bat}")
     make_shortcut(bat, dest, log)
     log("\nГотово! Запуск — «Launch GUI.bat» или ярлык на рабочем столе.")
