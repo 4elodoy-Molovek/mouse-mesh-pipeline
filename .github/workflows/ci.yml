@@ -45,6 +45,9 @@ jobs:
       - name: Build docs
         run: doxygen Doxyfile
       - name: Upload HTML docs
+        # Best-effort: Gitea's act_runner artifact backend can reject
+        # upload-artifact@v4, and that must not fail the (successful) doc build.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: doxygen-html
@@ -80,13 +83,15 @@ jobs:
         run: |
           ./cgal_remesh/mesh_and_remesh --help || ./cgal_remesh/mesh_and_remesh || true
 
-  # Publish the Doxygen HTML to GitHub Pages (default branch only). On Gitea,
-  # this deploy step is a no-op (the actions aren't provided) — use the
-  # `doxygen-html` artifact above, or Gitea Pages served from a branch.
+  # Publish the Doxygen HTML to GitHub Pages. GitHub-only (the deploy actions are
+  # not provided by Gitea) — gated on the github.com host so it is skipped on
+  # Gitea; there, use the `doxygen-html` artifact or Gitea Pages from a branch.
   pages:
     name: Deploy docs to Pages
     needs: docs
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: >-
+      github.server_url == 'https://github.com' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     runs-on: ubuntu-latest
     permissions:
       pages: write

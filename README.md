@@ -6,8 +6,8 @@ Monte-Carlo light transport**. Built for a mouse atlas (skin / skull / brain
 structures) but generalises to any labeled volume.
 
 The headline output is a set of **nested outer-envelope surfaces** — the correct
-geometric representation for the target Monte-Carlo solver (see
-[Why nested envelopes](#why-nested-envelopes)).
+geometric representation for the target Monte-Carlo solver (see the
+"Why nested envelopes" section below).
 
 ---
 
