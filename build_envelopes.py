@@ -167,7 +167,14 @@ def main() -> int:
     )
     ap.add_argument("--facet-size", type=float, default=0.12)
     ap.add_argument("--facet-distance", type=float, default=0.06)
-    ap.add_argument("--cell-size", type=float, default=0.25)
+    ap.add_argument(
+        "--cell-size",
+        type=float,
+        default=None,
+        help="CGAL tet cell size (mm). Only the surface is kept, so this can be "
+        "coarse; too fine blows up tet count/RAM. Default: config "
+        "'envelope_cell_size', else 0.25. Use >= ~1.5 for 0.5 mm human voxels.",
+    )
     ap.add_argument("--taubin", type=int, default=30, help="surface_cleaner smoothing iterations")
     ap.add_argument("--min-faces", type=int, default=1000, help="drop components smaller than this")
     ap.add_argument(
@@ -241,6 +248,10 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = load_cfg(args.config)
+    # cell-size falls back to the config so a GUI/config import needs no CLI flag
+    # (the GUI envelope run does not pass --cell-size).
+    if args.cell_size is None:
+        args.cell_size = float(cfg.get("envelope_cell_size", 0.25))
     out_dir = cfg["output_dir"]
     merged = os.path.join(out_dir, "02_merged.npy")
     if not os.path.exists(merged):
@@ -346,19 +357,32 @@ def main() -> int:
     #     then shows flush through the skin cut-face and reads as "poking through".
     #     Pulling non-root tissues back a few voxels from any border they touch
     #     lets skin's cap sit in front. No-op for a fully-enclosed volume.
+    #     Recess is proportional to nesting DEPTH so caps STEP inward (skin at the
+    #     plane, skull recess*1, CSF recess*2, ...) and stay strictly nested there
+    #     instead of coplanar (coplanar caps read as sub-voxel "pokethrough").
     recess = args.crop_recess if args.crop_recess >= 0 else max(args.nest_margin, 1)
     if recess > 0:
-        b = np.zeros(vol.shape, dtype=bool)
-        b[:recess] = b[-recess:] = True
-        b[:, :recess] = b[:, -recess:] = True
-        b[:, :, :recess] = b[:, :, -recess:] = True
+        depth = {}
         for L in labels:
-            if parent.get(L, 0) != 0 and bool((regions[L] & b).any()):
+            d, p = 0, parent.get(L, 0)
+            while p:
+                d += 1
+                p = parent.get(p, 0)
+            depth[L] = d
+        for L in labels:
+            w = recess * depth[L]
+            if w == 0:
+                continue
+            b = np.zeros(vol.shape, dtype=bool)
+            b[:w] = b[-w:] = True
+            b[:, :w] = b[:, -w:] = True
+            b[:, :, :w] = b[:, :, -w:] = True
+            if bool((regions[L] & b).any()):
                 before = int(regions[L].sum())
                 regions[L] = regions[L] & ~b
                 print(
-                    f"    crop-recess: {names.get(L, L)} pulled {recess} vox off the "
-                    f"crop border (-{before - int(regions[L].sum())} vox)"
+                    f"    crop-recess: {names.get(L, L)} pulled {w} vox (depth "
+                    f"{depth[L]}) off the crop border (-{before - int(regions[L].sum())} vox)"
                 )
 
     # 3) write region volumes (sequential, cheap)

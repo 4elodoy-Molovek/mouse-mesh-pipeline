@@ -40,5 +40,6 @@
     "envelope_seal_radius": 2,
     "envelope_nest_margin": 2,
     "envelope_jobs": 1,
-    "envelope_decimate": 0.5
+    "envelope_decimate": 0.5,
+    "envelope_cell_size": 0.25
 }
