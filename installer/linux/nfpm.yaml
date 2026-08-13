@@ -1,0 +1,68 @@
+# nfpm config: one spec -> .deb, .rpm and Arch .pkg.tar.zst.
+#   nfpm pkg -f installer/linux/nfpm.yaml -p deb       --target dist/
+#   nfpm pkg -f installer/linux/nfpm.yaml -p rpm       --target dist/
+#   nfpm pkg -f installer/linux/nfpm.yaml -p archlinux --target dist/
+# Environment variables (VERSION) are expanded by nfpm at build time.
+# The pipeline tree is assembled into ./payload by the CI job first.
+
+name: mouse-mesh-pipeline
+arch: amd64
+platform: linux
+version: ${VERSION}
+release: 1
+section: science
+priority: optional
+maintainer: "4elodoy-Molovek <ivandor228@outlook.com>"
+description: |
+  Turn a labeled voxel tissue atlas into clean watertight per-tissue surfaces
+  (nested outer envelopes) and optional conformal tet meshes, ready for
+  surface-based Monte Carlo light transport. Ships prebuilt CGAL C++ tools; the
+  Python environment is created in a dedicated venv on install.
+homepage: https://github.com/4elodoy-Molovek/mouse-mesh-pipeline
+license: MIT
+
+depends:
+  - python3
+
+contents:
+  - src: ./payload
+    dst: /opt/mouse-mesh-pipeline
+    type: tree
+  - src: ./installer/linux/mouse-mesh-pipeline
+    dst: /usr/bin/mouse-mesh-pipeline
+    file_info:
+      mode: 0755
+  - src: ./installer/assets/mouse-mesh-pipeline.desktop
+    dst: /usr/share/applications/mouse-mesh-pipeline.desktop
+  - src: ./installer/assets/mouse-mesh-pipeline.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/mouse-mesh-pipeline.svg
+
+scripts:
+  postinstall: ./installer/linux/postinstall.sh
+  preremove: ./installer/linux/preremove.sh
+
+overrides:
+  deb:
+    depends:
+      - python3
+      - python3-venv
+      - python3-pip
+      - python3-tk
+      - libgmp10
+      - libmpfr6
+      - libtbb12
+      - libtbbmalloc2
+  rpm:
+    depends:
+      - python3
+      - python3-tkinter
+      - gmp
+      - mpfr
+      - tbb
+  archlinux:
+    depends:
+      - python
+      - tk
+      - gmp
+      - mpfr
+      - onetbb

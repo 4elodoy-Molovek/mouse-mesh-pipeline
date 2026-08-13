@@ -1,12 +1,16 @@
 # CI for mouse-mesh-pipeline (GitHub Actions; also runs on Gitea via act_runner).
 #
-# python       lint + format check + byte-compile
-# docs         build Doxygen HTML (artifact)
-# cpp-linux    compile the C++ tools on Linux (fast portability check)
-# cpp-windows  build mesh_and_remesh.exe (+ DLLs) with MSYS2 + CGAL 6.0.1 + oneTBB
-# installer    freeze mouse-mesh-pipeline-setup.exe around the cpp-windows binaries
-# pages        deploy the Doxygen HTML to GitHub Pages (GitHub only, default branch)
-# release      on a v* tag: publish a GitHub Release with setup.exe + source + README
+# python          lint + format check + byte-compile
+# docs            build Doxygen HTML (artifact)
+# cpp-linux       build the Linux CGAL binaries (+ upload)         -> linux64-binaries
+# cpp-windows     build the Windows CGAL binaries (+ DLLs)         -> win64-binaries
+# cpp-macos       build the macOS CGAL binaries (+ bundled dylibs) -> macos-binaries
+# installer       Windows setup.exe (PyInstaller)                  -> mouse-mesh-pipeline-setup
+# linux-packages  .deb + .rpm + Arch .pkg.tar.zst (nfpm)           -> linux-packages
+# appimage        self-contained .AppImage                         -> appimage
+# macos-installer .pkg installer (pkgbuild)                        -> macos-pkg
+# pages           deploy the Doxygen HTML to GitHub Pages (GitHub only, default branch)
+# release         on a v* tag: publish a Release with every installer + source + README
 
 name: CI
 
@@ -57,8 +61,8 @@ jobs:
           path: docs/html
 
   cpp-linux:
-    name: Build C++ (Linux, CGAL 6.0.1)
-    runs-on: ubuntu-latest
+    name: Build C++ (Linux, CGAL 6.0.1 + TBB)
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
       - name: Install toolchain + CGAL deps
@@ -70,13 +74,23 @@ jobs:
         run: |
           wget -q https://github.com/CGAL/cgal/releases/download/v6.0.1/CGAL-6.0.1-library.tar.xz
           tar xf CGAL-6.0.1-library.tar.xz
-      - name: Build (sequential + TBB)
+      - name: Build (parallel Mesh_3 via TBB)
         run: |
           cd cgal_remesh
-          g++ -O2 -std=c++17 -I../CGAL-6.0.1/include mesh_and_remesh.cpp -lgmp -lmpfr -o mesh_and_remesh
-          g++ -O2 -std=c++17 -I../CGAL-6.0.1/include tet_remesh.cpp       -lgmp -lmpfr -o tet_remesh
-          g++ -O2 -std=c++17 -DCGAL_LINKED_WITH_TBB -I../CGAL-6.0.1/include \
-              mesh_and_remesh.cpp -lgmp -lmpfr -ltbb -ltbbmalloc -o mesh_and_remesh_tbb
+          CGAL=../CGAL-6.0.1/include
+          g++ -O2 -std=c++17 -DCGAL_LINKED_WITH_TBB -I"$CGAL" mesh_and_remesh.cpp \
+              -lgmp -lmpfr -ltbb -ltbbmalloc -o mesh_and_remesh
+          g++ -O2 -std=c++17 -I"$CGAL" tet_remesh.cpp -lgmp -lmpfr -o tet_remesh
+      - name: Collect binaries
+        run: |
+          mkdir -p out
+          cp cgal_remesh/mesh_and_remesh cgal_remesh/tet_remesh out/
+          ./out/mesh_and_remesh || true   # smoke: prints usage
+      - name: Upload Linux binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux64-binaries
+          path: out
 
   cpp-windows:
     name: Build C++ (Windows, CGAL 6.0.1 + TBB)
@@ -123,9 +137,47 @@ jobs:
           name: win64-binaries
           path: out
 
+  cpp-macos:
+    name: Build C++ (macOS, CGAL + TBB)
+    # macOS runners are GitHub-only; skip on Gitea act_runner.
+    if: github.server_url == 'https://github.com'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install CGAL toolchain (Homebrew)
+        run: brew install cgal tbb dylibbundler
+      - name: Build + bundle dylibs
+        run: |
+          cd cgal_remesh
+          BREW=$(brew --prefix)
+          CGAL=$(brew --prefix cgal)
+          clang++ -O2 -std=c++17 -DCGAL_LINKED_WITH_TBB \
+              -I"$CGAL/include" -I"$BREW/include" mesh_and_remesh.cpp \
+              -L"$BREW/lib" -lgmp -lmpfr -ltbb -ltbbmalloc -o mesh_and_remesh
+          clang++ -O2 -std=c++17 -I"$CGAL/include" -I"$BREW/include" \
+              tet_remesh.cpp -L"$BREW/lib" -lgmp -lmpfr -o tet_remesh
+          mkdir -p ../out
+          cp mesh_and_remesh tet_remesh ../out/
+          # copy the non-system dylibs next to the binaries and rewrite the load
+          # paths to @executable_path/libs (so it runs without Homebrew present)
+          dylibbundler -cd -of -b -x ../out/mesh_and_remesh -d ../out/libs \
+              -p @executable_path/libs -s "$BREW/lib"
+          dylibbundler -cd -of -b -x ../out/tet_remesh -d ../out/libs \
+              -p @executable_path/libs -s "$BREW/lib"
+          ../out/mesh_and_remesh || true   # smoke: prints usage
+      - name: Upload macOS binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-binaries
+          path: out
+
   installer:
     name: Windows installer (PyInstaller)
     needs: cpp-windows
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -146,6 +198,110 @@ jobs:
         with:
           name: mouse-mesh-pipeline-setup
           path: installer/dist/mouse-mesh-pipeline-setup.exe
+
+  linux-packages:
+    name: Linux packages (deb/rpm/Arch)
+    needs: cpp-linux
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Get Linux C++ binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: linux64-binaries
+          path: bin/linux64
+      - name: Install nfpm
+        run: |
+          echo 'deb [trusted=yes] https://repo.goreleaser.com/apt/ /' \
+            | sudo tee /etc/apt/sources.list.d/goreleaser.list
+          sudo apt-get update
+          sudo apt-get install -y nfpm
+      - name: Assemble payload + build packages
+        run: |
+          chmod +x bin/linux64/*
+          mkdir -p payload/installer payload/bin/linux64
+          cp ./*.py payload/
+          cp -r cgal_remesh configs scripts payload/
+          cp README.md LICENSE payload/
+          cp installer/setup_env.py payload/installer/
+          cp installer/requirements.txt payload/requirements.txt
+          cp bin/linux64/mesh_and_remesh bin/linux64/tet_remesh payload/bin/linux64/
+          chmod +x payload/bin/linux64/*
+          rm -f payload/cgal_remesh/*.exe
+          V="${GITHUB_REF_NAME}"; case "$V" in v*) V="${V#v}";; *) V="0.0.0";; esac
+          export VERSION="$V"
+          mkdir -p dist
+          nfpm pkg -f installer/linux/nfpm.yaml -p deb \
+            -t "dist/mouse-mesh-pipeline_${VERSION}_amd64.deb"
+          nfpm pkg -f installer/linux/nfpm.yaml -p rpm \
+            -t "dist/mouse-mesh-pipeline-${VERSION}-1.x86_64.rpm"
+          nfpm pkg -f installer/linux/nfpm.yaml -p archlinux \
+            -t "dist/mouse-mesh-pipeline-${VERSION}-1-x86_64.pkg.tar.zst"
+          ls -l dist/
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: dist/*
+
+  appimage:
+    name: AppImage (self-contained)
+    needs: cpp-linux
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Get Linux C++ binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: linux64-binaries
+          path: bin/linux64
+      - name: Build AppImage
+        run: |
+          chmod +x bin/linux64/* installer/appimage/build.sh
+          V="${GITHUB_REF_NAME}"; case "$V" in v*) V="${V#v}";; *) V="0.0.0";; esac
+          VERSION="$V" bash installer/appimage/build.sh
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*.AppImage
+
+  macos-installer:
+    name: macOS installer (.pkg)
+    needs: cpp-macos
+    if: >-
+      github.server_url == 'https://github.com' &&
+      (github.event_name == 'workflow_dispatch' ||
+       startsWith(github.ref, 'refs/tags/v') ||
+       github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Get macOS C++ binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-binaries
+          path: bin/macos
+      - name: Build pkg
+        run: |
+          chmod +x bin/macos/mesh_and_remesh bin/macos/tet_remesh \
+                   installer/macos/build-pkg.sh installer/macos/postinstall \
+                   installer/macos/mouse-mesh-pipeline
+          V="${GITHUB_REF_NAME}"; case "$V" in v*) V="${V#v}";; *) V="0.0.0";; esac
+          VERSION="$V" bash installer/macos/build-pkg.sh
+      - name: Upload macOS pkg
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-pkg
+          path: dist/*.pkg
 
   pages:
     name: Deploy docs to Pages
@@ -174,30 +330,32 @@ jobs:
         id: deploy
         uses: actions/deploy-pages@v4
 
-  # On a v* tag (GitHub only): publish a Release with the installer, a source
+  # On a v* tag (GitHub only): publish a Release with every installer, a source
   # archive and the README as downloadable assets.
   release:
     name: Release (assets)
-    needs: installer
+    needs: [installer, linux-packages, appimage, macos-installer]
     if: startsWith(github.ref, 'refs/tags/v') && github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v5
-      - name: Download installer
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: mouse-mesh-pipeline-setup
-          path: dist
-      - name: Package source archive
+          path: artifacts
+      - name: Stage release assets
         run: |
+          mkdir -p dist
+          cp artifacts/mouse-mesh-pipeline-setup/*.exe dist/ 2>/dev/null || true
+          cp artifacts/linux-packages/* dist/ 2>/dev/null || true
+          cp artifacts/appimage/*.AppImage dist/ 2>/dev/null || true
+          cp artifacts/macos-pkg/*.pkg dist/ 2>/dev/null || true
           git archive --format=zip -o dist/mouse-mesh-pipeline-src.zip HEAD
           cp README.md dist/README.md
+          ls -l dist/
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/mouse-mesh-pipeline-setup.exe
-            dist/mouse-mesh-pipeline-src.zip
-            dist/README.md
+          files: dist/*

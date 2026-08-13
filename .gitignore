@@ -1,6 +1,7 @@
 # ── Python ───────────────────────────────────────────────
 __pycache__/
 *.py[cod]
+*.log
 *.egg-info/
 .venv/
 env/
@@ -43,6 +44,21 @@ CRI_Data/
 docs/html/
 docs/latex/
 docs/xml/
+
+# ── Packaging build artifacts (produced in CI) ───────────
+/payload/
+/dist/
+/AppDir/
+installer/macos/root/
+installer/macos/scripts/
+*.AppImage
+*.deb
+*.rpm
+*.pkg
+*.pkg.tar.zst
+# Linux/macOS native binaries are built fresh in CI (only win64 is committed).
+bin/linux64/
+bin/macos/
 
 # ── OS / editor ──────────────────────────────────────────
 .DS_Store

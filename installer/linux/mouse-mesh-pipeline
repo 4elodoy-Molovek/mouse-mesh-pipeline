@@ -1,0 +1,16 @@
+#!/bin/sh
+# Launcher installed as /usr/bin/mouse-mesh-pipeline.
+# Runs the GUI from the dedicated venv created by the post-install step.
+PREFIX=/opt/mouse-mesh-pipeline
+VENV_PY="$PREFIX/.venv/bin/python"
+
+if [ ! -x "$VENV_PY" ]; then
+    echo "mouse-mesh-pipeline: the Python environment is not set up yet." >&2
+    echo "Run:  sudo python3 $PREFIX/installer/setup_env.py $PREFIX" >&2
+    exit 1
+fi
+
+# Point the pipeline at the bundled native binary regardless of config contents.
+export MMP_REMESH_EXE="$PREFIX/bin/linux64/mesh_and_remesh"
+cd "$PREFIX" || exit 1
+exec "$VENV_PY" pipeline_manager.py "$@"

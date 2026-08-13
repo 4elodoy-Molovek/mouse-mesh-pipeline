@@ -1,0 +1,13 @@
+#!/bin/bash
+# AppImage entry point. Everything (Python + all deps + the native CGAL binary
+# and its shared libraries) is bundled, so no network or system Python needed.
+HERE="$(dirname "$(readlink -f "${0}")")"
+
+export PATH="$HERE/usr/bin:$HERE/usr/conda/bin:$PATH"
+# Native CGAL binary finds its bundled libgmp/libmpfr/libtbb here. The bundled
+# Python resolves its own libs through its RUNPATH, so it is left out of this.
+export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export MMP_REMESH_EXE="$HERE/usr/bin/mesh_and_remesh"
+
+exec "$HERE/usr/conda/bin/python" \
+     "$HERE/usr/share/mouse-mesh-pipeline/pipeline_manager.py" "$@"

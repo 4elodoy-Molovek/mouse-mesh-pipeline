@@ -279,7 +279,7 @@ def main() -> int:
     work = os.path.join(out, "_work")
     os.makedirs(work, exist_ok=True)
 
-    exe = args.exe or cfg.get("remesh_exe")
+    exe = args.exe or os.environ.get("MMP_REMESH_EXE") or cfg.get("remesh_exe")
     msys_bin = args.msys2_bin or cfg.get("msys2_bin")
     env = dict(os.environ)
     if msys_bin and os.path.isdir(msys_bin):

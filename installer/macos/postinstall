@@ -1,0 +1,21 @@
+#!/bin/sh
+# pkg post-install: make binaries executable and build the venv. Must exit 0 so
+# the installer reports success even if pip could not run (user re-runs later).
+PREFIX=/usr/local/mouse-mesh-pipeline
+
+chmod +x "$PREFIX"/bin/macos/* 2>/dev/null || true
+chmod +x /usr/local/bin/mouse-mesh-pipeline 2>/dev/null || true
+
+PY=$(command -v python3 || true)
+if [ -z "$PY" ]; then
+    echo "mouse-mesh-pipeline: python3 not found." >&2
+    echo "Install Python 3.10+ (python.org or brew), then run:" >&2
+    echo "  sudo python3 $PREFIX/installer/setup_env.py $PREFIX" >&2
+    exit 0
+fi
+
+if ! "$PY" "$PREFIX/installer/setup_env.py" "$PREFIX"; then
+    echo "mouse-mesh-pipeline: environment setup did not finish (network?)." >&2
+    echo "Re-run later:  sudo python3 $PREFIX/installer/setup_env.py $PREFIX" >&2
+fi
+exit 0

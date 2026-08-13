@@ -44,8 +44,14 @@ MESH_MODES: dict[str, list[str]] = {
 
 _CGAL_SCRIPT = "npy2conformal_mesh.py"
 _REPO_DIR = os.path.dirname(os.path.abspath(__file__))
-_DEFAULT_REMESH_EXE = os.path.join(_REPO_DIR, "cgal_remesh", "mesh_and_remesh.exe")
-_DEFAULT_MSYS2_BIN = r"D:\msys64\ucrt64\bin"
+# The native binary is called mesh_and_remesh.exe on Windows and mesh_and_remesh
+# elsewhere. Packaged builds (deb/rpm/AppImage/pkg) export MMP_REMESH_EXE so the
+# GUI points at the bundled binary regardless of where it was installed/mounted.
+_EXE_SUFFIX = ".exe" if os.name == "nt" else ""
+_DEFAULT_REMESH_EXE = os.environ.get("MMP_REMESH_EXE") or os.path.join(
+    _REPO_DIR, "cgal_remesh", "mesh_and_remesh" + _EXE_SUFFIX
+)
+_DEFAULT_MSYS2_BIN = r"D:\msys64\ucrt64\bin" if os.name == "nt" else ""
 
 
 class PipelineApp:

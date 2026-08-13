@@ -42,24 +42,47 @@ INFO.txt + atlas.npy
 | `pipeline_manager.py` | Tkinter GUI, оркестрирующий все режимы |
 | `cgal_remesh/` | C++ CGAL-инструменты (`mesh_and_remesh.cpp`, `tet_remesh.cpp`) + `npy2inr.py` + сборка |
 | `bin/win64/` | готовые Windows-бинарники C++ + их runtime-DLL |
-| `installer/` | сборка установщика `mouse-mesh-pipeline-setup.exe` (PyInstaller) |
+| `installer/` | установщики под все ОС: Windows exe, Linux deb/rpm/AppImage/Arch, macOS pkg |
 | `scripts/` | развёртывание conda-окружений + `requirements-*.txt` |
 | `configs/` | примеры `pipeline_config*.json` (пути машинно-зависимы, правьте под себя) |
 | `docs/` | отчёт аудита; сюда же Doxygen кладёт `docs/html/` |
 | `.github/workflows/ci.yml` | CI: линт, доки, сборка C++ и установщика, релиз |
 
-## Установка в один клик (Windows)
+## Установка (готовые пакеты)
 
-Скачайте **`mouse-mesh-pipeline-setup.exe`** (артефакт CI-задачи `installer`, либо
-из ассетов релиза, либо соберите локально `installer\build.ps1`) и запустите.
-На машине с уже установленным **Python 3.10+** установщик:
+CI собирает установщики под все ОС; берите их из ассетов релиза (вкладка
+Releases) или из артефактов конкретного прогона Actions. Философия одна: тонкий
+установщик заводит **отдельный venv** и ставит зависимости через pip туда
+(системный Python не трогается), плюс кладёт готовый нативный `mesh_and_remesh`.
+Исключение — AppImage: он полностью самодостаточный (Python и все зависимости
+внутри, ставить ничего не надо).
 
-1. копирует пайплайн в выбранную папку;
-2. создаёт **отдельный venv** и ставит зависимости через pip туда (системный
-   Python не трогается);
-3. кладёт готовый C++ `mesh_and_remesh.exe` (+ DLL, MSYS2 не нужен) и прописывает
-   путь к нему в конфиг;
-4. создаёт лаунчер и ярлык на рабочем столе.
+**Windows** — `mouse-mesh-pipeline-setup.exe`. На машине с Python 3.10+ копирует
+пайплайн, создаёт venv, ставит зависимости, кладёт `mesh_and_remesh.exe` (+ DLL,
+MSYS2 не нужен) и делает ярлык на рабочем столе.
+
+**Linux (deb/rpm/Arch)** — нативный пакет с готовым бинарником CGAL; venv
+создаётся в `/opt/mouse-mesh-pipeline/.venv` на этапе post-install:
+
+```sh
+sudo apt install ./mouse-mesh-pipeline_<ver>_amd64.deb            # Debian/Ubuntu
+sudo dnf install ./mouse-mesh-pipeline-<ver>-1.x86_64.rpm         # Fedora/RHEL
+sudo pacman -U  ./mouse-mesh-pipeline-<ver>-1-x86_64.pkg.tar.zst  # Arch
+```
+
+Запуск — команда `mouse-mesh-pipeline` или ярлык «Mouse Mesh Pipeline».
+
+**Linux (AppImage)** — один самодостаточный файл, ставить ничего не нужно:
+
+```sh
+chmod +x mouse-mesh-pipeline-<ver>-x86_64.AppImage
+./mouse-mesh-pipeline-<ver>-x86_64.AppImage
+```
+
+**macOS** — `mouse-mesh-pipeline-<ver>.pkg` (двойной клик). Ставит пайплайн в
+`/usr/local/mouse-mesh-pipeline`, создаёт venv и кладёт `.app` в «Программы».
+Нужен Python 3.10+ (python.org или brew). Пакет не подписан — при первом запуске
+откройте через правый клик → «Открыть».
 
 Оболочечному пайплайну не нужны conda/pygalmesh — `npy2inr` пишет `.inr` на чистом
 NumPy.
@@ -168,14 +191,16 @@ CI собирает доки на каждый push и выкладывает а
 - **python** — ruff (реальные ошибки), проверка формата `black` и `clang-format`,
   байт-компиляция всех модулей.
 - **docs** — сборка Doxygen HTML, артефакт `doxygen-html`.
-- **cpp-linux** — компиляция C++ под Linux (seq + TBB) как быстрая проверка.
-- **cpp-windows** — сборка `mesh_and_remesh.exe` (+ DLL) под Windows: MSYS2 UCRT64
-  g++ + CGAL 6.0.1 + oneTBB; артефакт `win64-binaries`.
-- **installer** — упаковка `mouse-mesh-pipeline-setup.exe` (windows-latest) с
-  бинарниками из `cpp-windows`.
+- **cpp-linux / cpp-windows / cpp-macos** — сборка нативных бинарников CGAL (+TBB)
+  под каждую ОС; артефакты `linux64/win64/macos-binaries`. На Windows это MSYS2
+  UCRT64 g++, на macOS — clang + Homebrew CGAL с `dylibbundler`.
+- **installer** — Windows `mouse-mesh-pipeline-setup.exe` (PyInstaller).
+- **linux-packages** — `.deb` + `.rpm` + Arch `.pkg.tar.zst` из одного `nfpm.yaml`.
+- **appimage** — самодостаточный `.AppImage` (внутри Miniforge-Python + зависимости).
+- **macos-installer** — `.pkg` (`pkgbuild`).
 - **pages** — деплой Doxygen на GitHub Pages (только GitHub, default-ветка).
-- **release** — на теге `v*` создаёт GitHub Release с ассетами: `setup.exe`,
-  архив исходников, `README.md`.
+- **release** — на теге `v*` публикует GitHub Release со всеми установщиками
+  (exe / deb / rpm / pkg.tar.zst / AppImage / pkg), архивом исходников и `README.md`.
 
 Формат кода закреплён `black` (`pyproject.toml`, длина строки 100) и `clang-format`
 (`.clang-format`). Синтаксис — стандартный GitHub Actions; на **Gitea Actions**

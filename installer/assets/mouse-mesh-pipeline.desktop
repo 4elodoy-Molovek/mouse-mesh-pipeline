@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mouse Mesh Pipeline
+GenericName=Mesh pipeline
+Comment=Turn labeled voxel atlases into nested tissue surfaces for Monte Carlo light transport
+Exec=mouse-mesh-pipeline
+Icon=mouse-mesh-pipeline
+Terminal=false
+Categories=Science;Education;Graphics;
+Keywords=mesh;voxel;atlas;CGAL;MonteCarlo;
