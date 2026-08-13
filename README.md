@@ -1,157 +1,193 @@
 # mouse-mesh-pipeline
 
-Turn a **labeled voxel tissue atlas** (`.npy`) into clean, watertight **per-tissue
-surfaces** (and/or a conformal tetrahedral mesh) suitable for **surface-based
-Monte-Carlo light transport**. Built for a mouse atlas (skin / skull / brain
-structures) but generalises to any labeled volume.
+Пайплайн превращает **размеченный воксельный атлас тканей** (`.npy`) в чистые
+водонепроницаемые **поверхности по тканям** (и при желании конформную
+тетраэдральную сетку), пригодные для **Monte-Carlo переноса света по
+поверхностям**. Сделан под атлас мыши (кожа / череп / структуры мозга), но
+обобщается на любой размеченный объём.
 
-The headline output is a set of **nested outer-envelope surfaces** — the correct
-geometric representation for the target Monte-Carlo solver (see the
-"Why nested envelopes" section below).
+Главный результат — набор **вложенных внешних оболочек** тканей: именно такое
+представление корректно для целевого MC-солвера (см. раздел
+"Почему вложенные оболочки").
 
----
-
-## Pipeline at a glance
+## Пайплайн вкратце
 
 ```
 INFO.txt + atlas.npy
-      │  parse_info_txt.py          (spacing, label names, crop)
-      ▼
- connectivity_searcher.py           Этап 1  keep largest connected component / tissue
- small_area_closer.py               Этап 2  drop sub-threshold specks
- label_smoother.py                  Этап 3  (opt) multi-label voxel smoothing
-      ▼  02_merged.npy
-      ├── mesh mode ─────────────────────────────────────────────
-      │   classic     npy2vtk.py → meshValidator.py    (independent iso-surfaces)
-      │   cgal        npy2conformal_mesh.py            (pygalmesh single tet mesh)
-      │   cgal-remesh npy2inr.py → mesh_and_remesh.exe → mc_mesh_check.py
-      │   envelopes   build_envelopes.py               ★ recommended for surface-MC
-      ▼
- surface_cleaner.py                 watertight seal + Taubin + outward normals
-      ▼
- …/surfaces/surface_NN_<tissue>.vtk  +  optical_properties.csv
+  parse_info_txt.py         спейсинг, имена меток, кроп
+  -> connectivity_searcher.py   Этап 1: связные компоненты / слияния меток
+  -> small_area_closer.py       Этап 2: удаление мелких областей
+  -> label_smoother.py          Этап 3 (опц.): воксельное сглаживание меток
+  -> 02_merged.npy
+  -> режим сеток:
+       classic      npy2vtk.py -> meshValidator.py    (независимые изоповерхности)
+       cgal         npy2conformal_mesh.py             (pygalmesh, единая тет-сетка)
+       cgal-remesh  npy2inr.py -> mesh_and_remesh.exe -> mc_mesh_check.py
+       envelopes    build_envelopes.py                (рекомендуется для surface-MC)
+  -> surface_cleaner.py     заливка watertight + Taubin + нормали наружу
+  -> surfaces/surface_NN_<ткань>.vtk + optical_properties.csv
 ```
 
-`pipeline_manager.py` is a Tkinter GUI that wires every stage (pre-steps,
-mesh mode, cleaning) with the right interpreters and DLL paths.
+`pipeline_manager.py` — Tkinter GUI, связывающий все этапы (предобработка, режим
+сеток, чистка) с нужными интерпретаторами и путями к DLL.
 
-## Repository layout
+## Структура репозитория
 
-| path | what |
+| путь | что |
 |---|---|
-| `*.py` (root) | pipeline scripts — kept flat because they import each other by name (`from parse_info_txt import …`) |
-| `build_envelopes.py` | ★ nested-envelope builder (the recommended surface-MC path) |
-| `mc_mesh_check.py` | MC-suitability checker + per-tissue surface / MMC export |
-| `surface_cleaner.py` | per-tissue watertight seal + Taubin smoothing + outward normals |
-| `pipeline_manager.py` | Tkinter GUI orchestrating all modes |
-| `cgal_remesh/` | C++ CGAL tools (`mesh_and_remesh.cpp`, `tet_remesh.cpp`) + `npy2inr.py` + build |
-| `scripts/` | conda env setup + `requirements-*.txt` |
-| `configs/` | example `pipeline_config*.json` (⚠ paths are machine-specific — edit for your box) |
-| `docs/` | audit report; Doxygen HTML lands in `docs/html/` |
-| `.github/workflows/ci.yml` | CI: Python lint+compile, Doxygen, C++ build (GitHub / Gitea) |
+| `*.py` (корень) | скрипты пайплайна (плоско, т.к. импортируют друг друга по имени) |
+| `build_envelopes.py` | сборщик вложенных оболочек (рекомендуемый путь для surface-MC) |
+| `mc_mesh_check.py` | проверка пригодности сеток для MC + экспорт поверхностей / MMC |
+| `surface_cleaner.py` | заливка watertight + Taubin + нормали наружу + децимация |
+| `pipeline_manager.py` | Tkinter GUI, оркестрирующий все режимы |
+| `cgal_remesh/` | C++ CGAL-инструменты (`mesh_and_remesh.cpp`, `tet_remesh.cpp`) + `npy2inr.py` + сборка |
+| `bin/win64/` | готовые Windows-бинарники C++ + их runtime-DLL |
+| `installer/` | сборка установщика `mouse-mesh-pipeline-setup.exe` (PyInstaller) |
+| `scripts/` | развёртывание conda-окружений + `requirements-*.txt` |
+| `configs/` | примеры `pipeline_config*.json` (пути машинно-зависимы, правьте под себя) |
+| `docs/` | отчёт аудита; сюда же Doxygen кладёт `docs/html/` |
+| `.github/workflows/ci.yml` | CI: линт, доки, сборка C++ и установщика, релиз |
 
-## Install — one click (Windows)
+## Установка в один клик (Windows)
 
-Grab **`mouse-mesh-pipeline-setup.exe`** (CI artifact of the `installer` job, or
-`installer\build.ps1` locally) and run it. On a machine that already has
-**Python 3.10+**, it deploys the pipeline, creates a **dedicated venv** and
-pip-installs the dependencies into it (your system Python is never touched),
-ships the prebuilt C++ `mesh_and_remesh.exe` (+ DLLs, no MSYS2 needed), and drops
-a desktop shortcut. The envelope pipeline needs no conda/pygalmesh — `npy2inr`
-writes the `.inr` in pure NumPy.
+Скачайте **`mouse-mesh-pipeline-setup.exe`** (артефакт CI-задачи `installer`, либо
+из ассетов релиза, либо соберите локально `installer\build.ps1`) и запустите.
+На машине с уже установленным **Python 3.10+** установщик:
 
-## Install — from source
+1. копирует пайплайн в выбранную папку;
+2. создаёт **отдельный venv** и ставит зависимости через pip туда (системный
+   Python не трогается);
+3. кладёт готовый C++ `mesh_and_remesh.exe` (+ DLL, MSYS2 не нужен) и прописывает
+   путь к нему в конфиг;
+4. создаёт лаунчер и ярлык на рабочем столе.
 
-Two conda environments (numpy/scipy MKL base + pip extras); the `cgal_env` is
-only needed for the legacy pygalmesh `cgal` mesh mode, NOT for envelopes:
+Оболочечному пайплайну не нужны conda/pygalmesh — `npy2inr` пишет `.inr` на чистом
+NumPy.
+
+## Установка из исходников
+
+Два conda-окружения (научная база numpy/scipy + pip-дополнения). `cgal_env` нужен
+только для старого pygalmesh-режима `cgal`, но НЕ для оболочек:
 
 ```powershell
-# main env (pipeline + GUI): numpy, scipy, meshio, trimesh, pymeshlab, pymeshfix, vtk …
-scripts\setup_main_env.ps1        # or setup_main_env.sh
-# cgal env (only for pygalmesh / npy2inr .inr writer)
+# main-окружение (пайплайн + GUI): numpy, scipy, meshio, trimesh, pymeshlab, pymeshfix, vtk
+scripts\setup_main_env.ps1        # или setup_main_env.sh
+# cgal-окружение (только для pygalmesh)
 scripts\setup_cgal_env.ps1
 ```
 
-C++ tools (needs MSYS2 UCRT64 g++ + gmp/mpfr + **CGAL 6.0.1 headers**, header-only):
+C++-инструменты (нужны MSYS2 UCRT64 g++ + gmp/mpfr + **заголовки CGAL 6.0.1**):
 
 ```powershell
 cd cgal_remesh
-powershell -ExecutionPolicy Bypass -File build.ps1          # sequential
-powershell -ExecutionPolicy Bypass -File build.ps1 -Tbb     # parallel Mesh_3 (needs Intel TBB)
+powershell -ExecutionPolicy Bypass -File build.ps1          # последовательно
+powershell -ExecutionPolicy Bypass -File build.ps1 -Tbb     # параллельный Mesh_3 (нужен Intel TBB)
 ```
-See `cgal_remesh/build.ps1` header for the exact CGAL 6.0.1 download (the MSYS2
-5.5.2 package is **not** usable — its tetrahedral remeshing is broken).
 
-## Usage — nested envelopes (recommended)
+Пакет MSYS2 CGAL 5.5.2 использовать **нельзя** (его тетраэдральный ремешинг сломан);
+как скачать заголовки 6.0.1 и собрать oneTBB из исходников — в шапке
+`cgal_remesh/build.ps1`.
+
+## Использование: вложенные оболочки (рекомендуется)
 
 ```powershell
 python build_envelopes.py --config configs\pipeline_config_mouse.json ^
        --facet-size 0.10 --facet-distance 0.05 --taubin 40 ^
-       --nest-margin 2 --seal-open-radius 2 --jobs 1
+       --nest-margin 2 --seal-open-radius 2 --decimate 0.5 --jobs 1
 ```
-Produces `…/surfaces_envelopes/surface_NN_<tissue>.vtk` + `optical_properties.csv`.
-Nesting comes from the config key `envelope_parents` (e.g. mouse
-`{"2":1,"4":2,"5":2,"6":2,"7":2}` — skin ⊃ skull ⊃ brain).
 
-Key knobs:
-- `--facet-size` — surface detail (≈ voxel size is the sweet spot; finer just adds staircase).
-- `--seal-tunnels` / `--seal-open-radius` — close see-through "arch" tunnels (skin genus → 0).
-- `--nest-margin` — voxels an outer tissue must extend beyond its children so smoothed surfaces never cross (skull can't poke through skin).
-- `--crop-recess` — pull inner tissues back from a crop plane so the skin alone caps the cut face (auto = nest-margin).
-- `--decimate` — quadric-decimate the final surfaces to this fraction of faces (`0.5` = 50 %; watertight/nesting preserved).
-- `--jobs` — parallel per-tissue meshing (use `--jobs 1` with the TBB exe).
+Результат: `surfaces_envelopes/surface_NN_<ткань>.vtk` + `optical_properties.csv`.
+Вложенность берётся из ключа конфига `envelope_parents` (для мыши
+`{"2":1,"4":2,"5":2,"6":2,"7":2}` — кожа содержит череп, череп содержит мозг).
 
-Or run everything from the GUI: `python pipeline_manager.py` → mode **«Оболочки»**.
+Основные параметры:
 
-## Why nested envelopes
+- `--facet-size` — детализация поверхности (оптимум около размера вокселя; мельче
+  только вылезает лестница).
+- `--seal-tunnels` / `--seal-open-radius` — запечатывание сквозных тоннелей-арок
+  (кожа становится genus 0).
+- `--nest-margin` — на сколько вокселей внешняя ткань обязана выступать за
+  внутренние, чтобы после сглаживания поверхности не пересекались (череп не
+  торчит сквозь кожу).
+- `--crop-recess` — утопить внутренние ткани от плоскости кропа, чтобы торец
+  закрывала только кожа (авто = nest-margin).
+- `--decimate` — квадрик-децимация итоговых поверхностей до этой доли граней
+  (`0.5` = 50%; watertight и вложенность сохраняются).
+- `--jobs` — параллельное меширование тканей (с TBB-exe используйте `--jobs 1`).
 
-The target Monte-Carlo (`photonMove.cpp` / `mcml_intersection.cpp`) calls
-`FindIntersectionLayer(surfaceId, layerId)` with **no position and no normal**, so
-the layer on the far side of a surface must be uniquely fixed by *(which surface,
-which layer)*. That is only consistent under **strict nesting**, where each tissue
-is represented by its **outer envelope** (air ⊃ skin ⊃ skull ⊃ brain);
-`layerId == 0` is ambient/exit. A per-tissue *full* boundary (with inner walls
-around nested organs) breaks this — the skin surface would face air on one part
-and skull on another, and the skin|skull interface would be doubled.
-`build_envelopes.py` builds exactly these nested shells via
-`fill_holes(tissue ∪ nested-descendants)` → CGAL Mesh_3 → cleanup.
+Либо всё из GUI: `python pipeline_manager.py`, режим "Оболочки".
 
-## Performance
+## Почему вложенные оболочки
 
-Measured on the mouse envelopes (8-core box, facet 0.10). Full 6-tissue build:
+Целевой Monte-Carlo (`photonMove.cpp` / `mcml_intersection.cpp`) вызывает
+`FindIntersectionLayer(surfaceId, layerId)` **без позиции и без нормали**, значит
+слой по другую сторону поверхности обязан однозначно определяться парой
+*(поверхность, слой)*. Это возможно только при **строгой вложенности**, где каждая
+ткань представлена своей **внешней оболочкой** (air содержит кожу, кожа содержит
+череп, череп содержит мозг); `layerId == 0` — среда/выход. Полная граница ткани
+(с внутренними стенками вокруг вложенных органов) это ломает: поверхность кожи
+снаружи граничит с air, а изнутри с черепом, и граница кожа|череп задаётся дважды.
+`build_envelopes.py` строит именно такие вложенные оболочки:
+`fill_holes(ткань + вложенные потомки)` -> CGAL Mesh_3 -> чистка.
 
-| config | time | vs baseline |
+## Производительность
+
+Замер на мышином наборе (8 ядер, facet 0.10), полная сборка 6 тканей:
+
+| конфиг | время | к базе |
 |---|---|---|
-| sequential exe, `--jobs 1` | 194 s | 1.0x |
-| sequential exe, `--jobs 4` | 141 s | 1.4x |
-| **TBB exe, `--jobs 1`** | **91 s** | **2.1x** |
+| sequential exe, `--jobs 1` | 194 с | 1.0x |
+| sequential exe, `--jobs 4` | 141 с | 1.4x |
+| **TBB exe, `--jobs 1`** | **91 с** | **2.1x** |
 
-- **GPU:** not applicable — CGAL Mesh_3 has no GPU backend; the voxel morphology (scipy) is already seconds.
-- **Multi-thread across tissues:** `build_envelopes.py --jobs` / `surface_cleaner.py --jobs` run the independent tissues in parallel — bounded by the largest (skin), so ~1.4x.
-- **Multi-thread within a mesh (the big lever):** `build.ps1 -Tbb` builds parallel CGAL Mesh_3 (`Parallel_tag`). The skin mesh alone drops **85 s -> 14 s (~6x)**. Needs Intel oneTBB built with the SAME gcc (the MSYS2 package conflicts with the pinned gcc 13; build oneTBB v2022.0.0 from source — see `cgal_remesh/build.ps1` header). With the TBB exe use **`--jobs 1`** (each mesh already uses all cores; `--jobs > 1` oversubscribes).
+- **GPU:** неприменим — у CGAL Mesh_3 нет GPU-бэкенда; воксельная морфология
+  (scipy) и так занимает секунды.
+- **Многопоток по тканям:** `build_envelopes.py --jobs` / `surface_cleaner.py --jobs`
+  считают независимые ткани параллельно (потолок задаёт самая большая — кожа),
+  примерно 1.4x.
+- **Многопоток внутри одной сетки (главный рычаг):** `build.ps1 -Tbb` собирает
+  параллельный CGAL Mesh_3 (`Parallel_tag`). Одна только кожа: **85 с -> 14 с
+  (примерно 6x)**. Нужен Intel oneTBB, собранный тем же gcc (пакет MSYS2 конфликтует
+  с закреплённым gcc 13 — соберите oneTBB v2022.0.0 из исходников, см. шапку
+  `cgal_remesh/build.ps1`). С TBB-exe используйте `--jobs 1` (каждая сетка уже
+  занимает все ядра; `--jobs > 1` даёт переподписку).
 
-## Documentation (Doxygen)
+## Документация (Doxygen)
 
 ```
-doxygen Doxyfile        # -> docs/html/index.html   (C++ + Python docstrings)
+doxygen Doxyfile        # -> docs/html/index.html  (C++ и Python)
 ```
-CI builds this on every push and uploads it as the `doxygen-html` artifact.
 
-## CI (GitHub / Gitea)
+CI собирает доки на каждый push и выкладывает артефактом `doxygen-html`; на GitHub
+дополнительно деплоит на GitHub Pages.
 
-`.github/workflows/ci.yml` runs five jobs:
-- **python** — ruff error-lint, `black --check` + `clang-format` format check, byte-compile every module.
-- **docs** — build Doxygen HTML, upload as the `doxygen-html` artifact.
-- **cpp** — build sequential + TBB against the pinned CGAL 6.0.1.
-- **pages** — deploy the Doxygen HTML to GitHub Pages (default branch only).
-- **installer** — freeze `mouse-mesh-pipeline-setup.exe` (windows-latest) and upload it.
+## CI и релизы
 
-Formatting is enforced by `black` (`pyproject.toml`, line length 100) and
-`clang-format` (`.clang-format`). The syntax is standard GitHub Actions and runs
-on **Gitea Actions** via `act_runner` (enable Actions and register a runner). The
-`pages` deploy uses GitHub-only actions and is a no-op on Gitea — there, serve the
-`doxygen-html` artifact or use Gitea Pages from a branch.
+`.github/workflows/ci.yml` — задачи:
 
-## License
+- **python** — ruff (реальные ошибки), проверка формата `black` и `clang-format`,
+  байт-компиляция всех модулей.
+- **docs** — сборка Doxygen HTML, артефакт `doxygen-html`.
+- **cpp-linux** — компиляция C++ под Linux (seq + TBB) как быстрая проверка.
+- **cpp-windows** — сборка `mesh_and_remesh.exe` (+ DLL) под Windows: MSYS2 UCRT64
+  g++ + CGAL 6.0.1 + oneTBB; артефакт `win64-binaries`.
+- **installer** — упаковка `mouse-mesh-pipeline-setup.exe` (windows-latest) с
+  бинарниками из `cpp-windows`.
+- **pages** — деплой Doxygen на GitHub Pages (только GitHub, default-ветка).
+- **release** — на теге `v*` создаёт GitHub Release с ассетами: `setup.exe`,
+  архив исходников, `README.md`.
 
-MIT — see [LICENSE](LICENSE).
+Формат кода закреплён `black` (`pyproject.toml`, длина строки 100) и `clang-format`
+(`.clang-format`). Синтаксис — стандартный GitHub Actions; на **Gitea Actions**
+идёт через `act_runner` (GitHub-only задачи `pages`/`release` там пропускаются).
+
+Чтобы выпустить релиз с ассетами:
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0     # и/или: git push github v1.0.0
+```
+
+## Лицензия
+
+MIT — см. [LICENSE](LICENSE).

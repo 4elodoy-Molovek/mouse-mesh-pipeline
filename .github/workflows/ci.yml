@@ -1,9 +1,12 @@
-# CI for mouse-mesh-pipeline.
-# GitHub Actions syntax; runs unchanged on Gitea Actions (act_runner).
-# Three jobs: Python lint+compile, Doxygen docs, and the C++ CGAL build
-# (sequential + TBB-parallel), against the exact CGAL 6.0.1 headers the project
-# pins — so CI validates the TBB build path even though the local MSYS2 toolchain
-# can't (its gcc 13 conflicts with the current tbb package).
+# CI for mouse-mesh-pipeline (GitHub Actions; also runs on Gitea via act_runner).
+#
+# python       lint + format check + byte-compile
+# docs         build Doxygen HTML (artifact)
+# cpp-linux    compile the C++ tools on Linux (fast portability check)
+# cpp-windows  build mesh_and_remesh.exe (+ DLLs) with MSYS2 + CGAL 6.0.1 + oneTBB
+# installer    freeze mouse-mesh-pipeline-setup.exe around the cpp-windows binaries
+# pages        deploy the Doxygen HTML to GitHub Pages (GitHub only, default branch)
+# release      on a v* tag: publish a GitHub Release with setup.exe + source + README
 
 name: CI
 
@@ -26,7 +29,7 @@ jobs:
           python-version: "3.12"
       - name: Install tools
         run: python -m pip install --upgrade pip ruff black clang-format
-      - name: Lint (real errors only — syntax, undefined names)
+      - name: Lint (real errors only)
         run: ruff check --select E9,F63,F7,F82 .
       - name: Format check (black)
         run: black --check --diff .
@@ -53,8 +56,8 @@ jobs:
           name: doxygen-html
           path: docs/html
 
-  cpp:
-    name: Build C++ (CGAL 6.0.1)
+  cpp-linux:
+    name: Build C++ (Linux, CGAL 6.0.1)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -63,29 +66,87 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y g++ libgmp-dev libmpfr-dev libboost-dev \
                                   libeigen3-dev libtbb-dev wget xz-utils
-      - name: Fetch CGAL 6.0.1 headers (header-only, matches the pinned version)
+      - name: Fetch CGAL 6.0.1 headers
         run: |
           wget -q https://github.com/CGAL/cgal/releases/download/v6.0.1/CGAL-6.0.1-library.tar.xz
           tar xf CGAL-6.0.1-library.tar.xz
-      - name: Build sequential
+      - name: Build (sequential + TBB)
         run: |
           cd cgal_remesh
           g++ -O2 -std=c++17 -I../CGAL-6.0.1/include mesh_and_remesh.cpp -lgmp -lmpfr -o mesh_and_remesh
           g++ -O2 -std=c++17 -I../CGAL-6.0.1/include tet_remesh.cpp       -lgmp -lmpfr -o tet_remesh
-      - name: Build TBB-parallel Mesh_3
-        run: |
-          cd cgal_remesh
-          # CGAL's parallel Mesh_3 needs both TBB core and tbbmalloc
-          # (scalable_allocator -> scalable_malloc/free).
           g++ -O2 -std=c++17 -DCGAL_LINKED_WITH_TBB -I../CGAL-6.0.1/include \
               mesh_and_remesh.cpp -lgmp -lmpfr -ltbb -ltbbmalloc -o mesh_and_remesh_tbb
-      - name: Smoke-test the binaries run
-        run: |
-          ./cgal_remesh/mesh_and_remesh --help || ./cgal_remesh/mesh_and_remesh || true
 
-  # Publish the Doxygen HTML to GitHub Pages. GitHub-only (the deploy actions are
-  # not provided by Gitea) — gated on the github.com host so it is skipped on
-  # Gitea; there, use the `doxygen-html` artifact or Gitea Pages from a branch.
+  cpp-windows:
+    name: Build C++ (Windows, CGAL 6.0.1 + TBB)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gmp
+            mingw-w64-ucrt-x86_64-mpfr
+            mingw-w64-ucrt-x86_64-boost
+            mingw-w64-ucrt-x86_64-eigen3
+            mingw-w64-ucrt-x86_64-tbb
+            curl tar
+      - name: Fetch CGAL 6.0.1 headers
+        run: |
+          curl -L -o cgal.tar.xz https://github.com/CGAL/cgal/releases/download/v6.0.1/CGAL-6.0.1-library.tar.xz
+          tar xf cgal.tar.xz
+      - name: Build mesh_and_remesh (TBB) + tet_remesh
+        run: |
+          cd cgal_remesh
+          CGAL=../CGAL-6.0.1/include
+          g++ -O2 -std=c++17 -DCGAL_LINKED_WITH_TBB -I"$CGAL" mesh_and_remesh.cpp \
+              -lmpfr -lgmp -ltbb12 -ltbbmalloc -o mesh_and_remesh.exe
+          g++ -O2 -std=c++17 -I"$CGAL" tet_remesh.cpp -lmpfr -lgmp -o tet_remesh.exe
+      - name: Collect exe + runtime DLLs
+        run: |
+          mkdir -p out
+          cp cgal_remesh/mesh_and_remesh.exe cgal_remesh/tet_remesh.exe out/
+          for d in libgcc_s_seh-1 libgmp-10 libmpfr-6 libstdc++-6 libwinpthread-1 libtbb12 libtbbmalloc; do
+            cp /ucrt64/bin/$d.dll out/
+          done
+          ./out/mesh_and_remesh.exe || true   # smoke: loads its DLLs, prints usage
+      - name: Upload Windows binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: win64-binaries
+          path: out
+
+  installer:
+    name: Windows installer (PyInstaller)
+    needs: cpp-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get CI-built C++ binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: win64-binaries
+          path: bin/win64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+      - name: Build installer
+        run: powershell -ExecutionPolicy Bypass -File installer/build.ps1
+      - name: Upload installer exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: mouse-mesh-pipeline-setup
+          path: installer/dist/mouse-mesh-pipeline-setup.exe
+
   pages:
     name: Deploy docs to Pages
     needs: docs
@@ -113,23 +174,30 @@ jobs:
         id: deploy
         uses: actions/deploy-pages@v4
 
-  # Freeze the GUI+pipeline installer (mouse-mesh-pipeline-setup.exe) on Windows.
-  # Bundles the prebuilt C++ binaries from bin/win64/; heavy Python libs are
-  # pip-installed on the target machine at install time (not frozen).
-  installer:
-    name: Windows installer (PyInstaller)
-    runs-on: windows-latest
+  # On a v* tag (GitHub only): publish a Release with the installer, a source
+  # archive and the README as downloadable assets.
+  release:
+    name: Release (assets)
+    needs: installer
+    if: startsWith(github.ref, 'refs/tags/v') && github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install PyInstaller
-        run: python -m pip install --upgrade pip pyinstaller
-      - name: Build installer
-        run: powershell -ExecutionPolicy Bypass -File installer/build.ps1
-      - name: Upload installer exe
-        uses: actions/upload-artifact@v4
+      - name: Download installer
+        uses: actions/download-artifact@v4
         with:
           name: mouse-mesh-pipeline-setup
-          path: installer/dist/mouse-mesh-pipeline-setup.exe
+          path: dist
+      - name: Package source archive
+        run: |
+          git archive --format=zip -o dist/mouse-mesh-pipeline-src.zip HEAD
+          cp README.md dist/README.md
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/mouse-mesh-pipeline-setup.exe
+            dist/mouse-mesh-pipeline-src.zip
+            dist/README.md
