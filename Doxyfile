@@ -32,6 +32,16 @@ INLINE_SOURCES         = NO
 REFERENCED_BY_RELATION = YES
 REFERENCES_RELATION    = YES
 
+# --- modern theme (doxygen-awesome-css) -----------------------------------
+# Clean typography, a navigation sidebar and automatic dark mode (follows the
+# OS colour scheme). The .css files are vendored under docs/doxygen-awesome/.
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = LIGHT
+HTML_EXTRA_STYLESHEET  = docs/doxygen-awesome/doxygen-awesome.css \
+                         docs/doxygen-awesome/doxygen-awesome-sidebar-only.css
+
 # --- diagrams (graphviz if available in CI) -------------------------------
 HAVE_DOT               = YES
 CALL_GRAPH             = NO
