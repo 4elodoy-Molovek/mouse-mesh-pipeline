@@ -371,6 +371,12 @@ def export_surfaces(path: str, out_dir: str, names: Optional[Dict[int, str]] = N
     """Write one watertight per-tissue surface VTK (boundary faces of each
     region's tets), with true tissue labels in the file names. For inspection
     in ParaView and for surface-based MC (MCX). Returns the written paths."""
+    if not _HAS_MESHIO:
+        raise RuntimeError(
+            "mc_mesh_check/export_surfaces requires 'meshio' (pip install meshio). "
+            "If running from a GUI, point the Python interpreter at the env that has "
+            "meshio/vtk/pymeshlab, not a bare base install."
+        )
     true_labels = sorted(names.keys()) if names else None
     pts, tet, ref, _remap = _load_tet(path, true_labels)
     if tet is None or ref is None:

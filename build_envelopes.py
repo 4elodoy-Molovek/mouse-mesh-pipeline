@@ -159,6 +159,78 @@ def spacing_zyx(cfg: dict) -> tuple[float, float, float]:
 # ── main ───────────────────────────────────────────────────────────────────
 
 
+def nest_repair(out: str, parent: dict, names: dict, labels: list, clearance: float) -> None:
+    """Push child vertices that poke through (or sit within `clearance` mm of) the
+    parent surface back to `clearance` inside it. Decimation moves faces beyond the
+    voxel nest-margin, so a heavily decimated child can locally protrude; this fixes
+    it on the meshed surfaces. Processed outer->inner (each child against its already
+    repaired parent); face topology is untouched so surfaces stay watertight."""
+    import vtk
+    from vtk.util.numpy_support import vtk_to_numpy  # noqa: F401  (kept for parity)
+
+    def _depth(L):
+        d, p = 0, parent.get(L, 0)
+        while p:
+            d += 1
+            p = parent.get(p, 0)
+        return d
+
+    def _path(L):
+        return os.path.join(out, f"surface_{L:02d}_{names.get(L, f'label_{L}')}.vtk")
+
+    def _read(L):
+        p = _path(L)
+        if not os.path.exists(p):
+            return None
+        r = vtk.vtkUnstructuredGridReader()
+        r.SetFileName(p)
+        r.Update()
+        return r.GetOutput()
+
+    def _boundary(ug):
+        gf = vtk.vtkGeometryFilter()
+        gf.SetInputData(ug)
+        gf.Update()
+        return gf.GetOutput()
+
+    for L in sorted(labels, key=_depth):
+        p = parent.get(L, 0)
+        if not p:
+            continue
+        ug = _read(L)
+        pug = _read(p)
+        if ug is None or pug is None:
+            continue
+        imp = vtk.vtkImplicitPolyDataDistance()
+        imp.SetInput(_boundary(pug))
+        pts = ug.GetPoints()
+        grad = [0.0, 0.0, 0.0]
+        moved, worst = 0, 0.0
+        for i in range(pts.GetNumberOfPoints()):
+            x = pts.GetPoint(i)
+            d = imp.EvaluateFunction(x)  # <0 inside parent, >0 outside
+            if d > -clearance:
+                imp.EvaluateGradient(x, grad)
+                gx, gy, gz = grad
+                ng = (gx * gx + gy * gy + gz * gz) ** 0.5
+                if ng < 1e-9:
+                    continue
+                s = (d + clearance) / ng
+                pts.SetPoint(i, x[0] - s * gx, x[1] - s * gy, x[2] - s * gz)
+                moved += 1
+                worst = max(worst, d)
+        if moved:
+            pts.Modified()
+            w = vtk.vtkUnstructuredGridWriter()
+            w.SetFileName(_path(L))
+            w.SetInputData(ug)
+            w.Write()
+            print(
+                f"    nest-repair: {names.get(L, L)} pushed {moved} verts inside "
+                f"{names.get(p, p)} (was up to +{worst:.3f} mm out)"
+            )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="nested outer-envelope surfaces for surface-MC")
     ap.add_argument("--config", required=True, help="pipeline_config*.json")
@@ -225,6 +297,26 @@ def main() -> int:
         "so the root tissue alone caps a crop plane (stops inner cut-faces "
         "showing flush through the skin cut-face). -1 = auto (=nest-margin), "
         "0 disables.",
+    )
+    ap.add_argument(
+        "--nest-repair",
+        dest="nest_repair",
+        action="store_true",
+        default=True,
+        help="after decimation, push child verts that poke through the parent back "
+        "inside it (default on; makes aggressive --decimate nesting-safe)",
+    )
+    ap.add_argument(
+        "--no-nest-repair",
+        dest="nest_repair",
+        action="store_false",
+        help="disable the post-decimation nesting repair",
+    )
+    ap.add_argument(
+        "--repair-clearance",
+        type=float,
+        default=-1.0,
+        help="mm the repair keeps each child inside its parent (-1 = auto ~0.5 voxel)",
     )
     ap.add_argument(
         "--cgal-python",
@@ -480,6 +572,10 @@ def main() -> int:
             ],
             check=True,
         )
+        if args.nest_repair:
+            clr = args.repair_clearance if args.repair_clearance >= 0 else 0.5 * min(dz, dy, dx)
+            print("\nNesting repair (push poking child verts inside parents)...")
+            nest_repair(out, parent, names, labels, clr)
         # optical-property template (same labels; names carry them)
         import csv
 
