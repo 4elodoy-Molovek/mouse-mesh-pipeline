@@ -28,8 +28,10 @@ INFO.txt + atlas.npy
   -> surfaces/surface_NN_<ткань>.vtk + optical_properties.csv
 ```
 
-`pipeline_manager.py` — Tkinter GUI, связывающий все этапы (предобработка, режим
-сеток, чистка) с нужными интерпретаторами и путями к DLL.
+`pipeline_manager.py` — GUI на PySide6 (Qt): панели зависят от режима, живой лог,
+вкладка метрик, тёмная/светлая тема, поле выбора python-интерпретатора; связывает
+все этапы (предобработка, режим сеток, чистка). Требует `PySide6`. Старый Tkinter-
+интерфейс сохранён как `pipeline_manager_tk.py` (запасной, без зависимостей).
 
 ## Структура репозитория
 
@@ -39,7 +41,7 @@ INFO.txt + atlas.npy
 | `build_envelopes.py` | сборщик вложенных оболочек (рекомендуемый путь для surface-MC) |
 | `mc_mesh_check.py` | проверка пригодности сеток для MC + экспорт поверхностей / MMC |
 | `surface_cleaner.py` | заливка watertight + Taubin + нормали наружу + децимация |
-| `pipeline_manager.py` | Tkinter GUI, оркестрирующий все режимы |
+| `pipeline_manager.py` | GUI на PySide6 (Qt), оркестрирующий все режимы; `pipeline_manager_tk.py` — старый Tkinter |
 | `cgal_remesh/` | C++ CGAL-инструменты (`mesh_and_remesh.cpp`, `tet_remesh.cpp`) + `npy2inr.py` + сборка |
 | `bin/win64/` | готовые Windows-бинарники C++ + их runtime-DLL |
 | `installer/` | установщики под все ОС: Windows exe, Linux deb/rpm/AppImage/Arch, macOS pkg |
