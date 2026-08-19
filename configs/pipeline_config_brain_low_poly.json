@@ -1,7 +1,7 @@
 {
     "info_txt": "G:/nauchka/CRI_Data/human/atlas/INFO.txt",
     "input_volume": "G:/nauchka/CRI_Data/human/atlas/subject04_crisp.npy",
-    "output_dir": "G:/nauchka/CRI_Data/human/save_data/vtk_export/surfaces",
+    "output_dir": "G:/nauchka/CRI_Data/human/save_data_lowpoly/vtk_export/surfaces",
     "z_cut_mm": -45.0,
     "y_end_idx": null,
     "min_voxels": 1000,
@@ -33,15 +33,15 @@
         "2": 1,
         "3": 2
     },
-    "envelope_facet_size": 0.5,
-    "envelope_facet_dist": 0.4,
+    "envelope_facet_size": 2.0,
+    "envelope_facet_dist": 0.8,
     "envelope_taubin": 40,
     "envelope_seal_tunnels": true,
     "envelope_seal_radius": 2,
     "envelope_nest_margin": 2,
     "envelope_jobs": 1,
-    "envelope_decimate": 0.1,
-    "envelope_cell_size": 1.5,
+    "envelope_decimate": 0.3,
+    "envelope_cell_size": 2.5,
     "envelope_metrics": true,
     "envelope_render": true,
     "mesh_mode": "envelopes"
