@@ -323,6 +323,7 @@ def main() -> int:
     parents = json.loads(args.parents) if args.parents else cfg.get("envelope_parents", {})
     parents = {int(k): int(v) for k, v in parents.items()}
     names = _names_from_info(info)
+    names.update({int(k): v for k, v in cfg.get("label_names_extra", {}).items()})
 
     items = collect(surf_dir, names, parents)
     if not items:

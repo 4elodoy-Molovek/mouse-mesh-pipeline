@@ -139,12 +139,16 @@ def load_cfg(path: str) -> dict:
 
 
 def label_names(cfg: dict) -> dict[int, str]:
+    names: dict[int, str] = {}
     info = cfg.get("info_txt")
     if info and os.path.exists(info):
         from parse_info_txt import parse_info_txt
 
-        return parse_info_txt(info).label_names
-    return {}
+        names = dict(parse_info_txt(info).label_names)
+    # label_names_extra overrides/adds names for synthesised labels (e.g. the
+    # grey/white split, where a merged brain label is re-purposed as grey).
+    names.update({int(k): v for k, v in cfg.get("label_names_extra", {}).items()})
+    return names
 
 
 def spacing_zyx(cfg: dict) -> tuple[float, float, float]:

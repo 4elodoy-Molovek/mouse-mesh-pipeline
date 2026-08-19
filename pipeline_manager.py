@@ -328,6 +328,10 @@ class PipelineManager(QtWidgets.QMainWindow):
         self.env_render = QtWidgets.QCheckBox("Сохранить рендеры (6 видов + разрез)")
         f.addWidget(self.env_metrics, 9, 0, 1, 2)
         f.addWidget(self.env_render, 10, 0, 1, 2)
+        self.env_gw = QtWidgets.QCheckBox("Разделить мозг на серое/белое (эрозия)")
+        self.env_gw_mm = _dspin(0.1, 5.0, 0.1, 2, 0.6)
+        f.addWidget(self.env_gw, 11, 0, 1, 2)
+        self._grid(f, 12, "    Толщина серого (мм):", self.env_gw_mm)
         for key, w_ in (
             ("envelope_facet_size", self.env_facet),
             ("envelope_facet_dist", self.env_dist),
@@ -347,6 +351,8 @@ class PipelineManager(QtWidgets.QMainWindow):
             "envelope_metrics", self.env_metrics.isChecked, self.env_metrics.setChecked, False
         )
         self._reg("envelope_render", self.env_render.isChecked, self.env_render.setChecked, False)
+        self._reg("grey_white_split", self.env_gw.isChecked, self.env_gw.setChecked, False)
+        self._reg("gw_grey_mm", self.env_gw_mm.value, self.env_gw_mm.setValue, 0.6)
         return w
 
     def _page_remesh(self):
@@ -578,6 +584,8 @@ class PipelineManager(QtWidgets.QMainWindow):
         mode = MODES[self.mode.currentIndex()][1]
         out_dir = self.output_dir.text().strip()
         if mode == "envelopes":
+            if self.env_gw.isChecked():  # split brain -> grey shell + white core first
+                tasks.append(("grey_white_split", [PY, "grey_white_split.py"] + ca))
             argv = (
                 [PY, "build_envelopes.py"]
                 + ca

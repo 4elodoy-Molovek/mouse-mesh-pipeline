@@ -452,6 +452,7 @@ def main() -> int:
     info = parse_info_txt(cfg["info_txt"]) if cfg.get("info_txt") else None
     spacing = tuple(info.spacing_zyx) if info else (1.0, 1.0, 1.0)
     names = {int(k): v for k, v in (info.label_names.items() if info else {})}
+    names.update({int(k): v for k, v in cfg.get("label_names_extra", {}).items()})
     parents = cfg.get("envelope_parents", {})
     raw_dir = os.path.join(surf_dir, "_metrics", "raw")
     region_dir = os.path.join(surf_dir, "_metrics", "regions")
