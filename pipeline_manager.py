@@ -36,23 +36,46 @@ MODES = [
     ("Классический — npy2vtk + meshValidator (независимые изоповерхности)", "classic"),
 ]
 
+# (config key, header label, tooltip). Tooltips are shown on the metrics table
+# headers; the same explanations live in README "Метрики поверхностей".
 METRIC_COLUMNS = [
-    ("name", "ткань"),
-    ("faces", "граней"),
-    ("area_mm2", "площадь см²"),
-    ("volume_mm3", "объём см³"),
-    ("watertight", "wt"),
-    ("genus", "genus"),
-    ("components", "комп"),
-    ("self_intersections", "self-x"),
-    ("aspect_p99", "asp99"),
-    ("sliver_pct", "sliver%"),
-    ("rms_vox_mm", "RMSvox"),
-    ("max_vox_mm", "MAXvox"),
-    ("rms_raw_mm", "RMSraw"),
-    ("hausdorff_raw_mm", "Hraw"),
-    ("min_gap_mm", "minGap"),
-    ("pokethrough_pct", "poke%"),
+    ("name", "ткань", "имя ткани (surface_NN_<ткань>)"),
+    ("faces", "граней", "число треугольников поверхности"),
+    ("area_mm2", "площадь см²", "площадь поверхности (см²)"),
+    ("volume_mm3", "объём см³", "объём, заключённый внутри оболочки (см³)"),
+    (
+        "watertight",
+        "wt",
+        "watertight: замкнута, без граничных и non-manifold рёбер (норма Y, обязательно для MC)",
+    ),
+    (
+        "genus",
+        "genus",
+        "топологический род = число сквозных тоннелей (0 = как сфера; "
+        "у черепа >0 — анатомические форамины/швы, это норма)",
+    ),
+    ("components", "комп", "число связных компонент (норма 1)"),
+    ("self_intersections", "self-x", "число самопересекающихся граней (норма 0)"),
+    (
+        "aspect_p99",
+        "asp99",
+        "99-й перцентиль aspect ratio треугольников (1 = равносторонний, большой = игла)",
+    ),
+    ("sliver_pct", "sliver%", "доля треугольников с минимальным углом < 10° (тонкие щепки), %"),
+    (
+        "rms_vox_mm",
+        "RMSvox",
+        "RMS-отклонение вершин от воксельной границы оболочки, мм (порядка вокселя = отлично)",
+    ),
+    ("max_vox_mm", "MAXvox", "максимальное отклонение от воксельной границы оболочки, мм"),
+    ("rms_raw_mm", "RMSraw", "RMS-отклонение от сырой CGAL-сетки (до Taubin/децимации), мм"),
+    ("hausdorff_raw_mm", "Hraw", "симметричное расстояние Хаусдорфа до сырой CGAL-сетки, мм"),
+    (
+        "min_gap_mm",
+        "minGap",
+        "минимальный зазор до родительской оболочки, мм (>0 = внутри; корень n/a)",
+    ),
+    ("pokethrough_pct", "poke%", "доля вершин снаружи родителя (торчание), % — норма 0.000"),
 ]
 
 LIGHT = {
@@ -457,7 +480,9 @@ class PipelineManager(QtWidgets.QMainWindow):
         self.log.setReadOnly(True)
         self.log.setMaximumBlockCount(20000)
         self.table = QtWidgets.QTableWidget(0, len(METRIC_COLUMNS))
-        self.table.setHorizontalHeaderLabels([h for _, h in METRIC_COLUMNS])
+        self.table.setHorizontalHeaderLabels([c[1] for c in METRIC_COLUMNS])
+        for c, col in enumerate(METRIC_COLUMNS):
+            self.table.horizontalHeaderItem(c).setToolTip(col[2])  # hover = metric explanation
         self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.tabs.addTab(self.log, "Лог")
@@ -788,7 +813,7 @@ class PipelineManager(QtWidgets.QMainWindow):
             return
         self.table.setRowCount(len(rows))
         for r, rec in enumerate(rows):
-            for c, (key, _) in enumerate(METRIC_COLUMNS):
+            for c, (key, _, _) in enumerate(METRIC_COLUMNS):
                 v = rec.get(key)
                 if key == "area_mm2" and isinstance(v, (int, float)):
                     v = f"{v/100:.1f}"
