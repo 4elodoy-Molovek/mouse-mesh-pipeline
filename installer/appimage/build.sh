@@ -8,6 +8,19 @@
 # Expects the native binaries in ./bin/linux64/ and to be run from the repo root.
 set -euo pipefail
 
+# Retry a command a few times with linear backoff. The AppImage build pulls
+# Miniforge, the full pip stack and appimagetool over the network on a hosted
+# runner; a single transient hiccup there must not fail an otherwise-green CI.
+retry() {
+    local n=0 max=5
+    until "$@"; do
+        n=$((n + 1))
+        [ "$n" -ge "$max" ] && { echo "!! gave up after $max tries: $*" >&2; return 1; }
+        echo ">> retry $n/$max in $((n * 5))s: $*" >&2
+        sleep $((n * 5))
+    done
+}
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO"
 
@@ -25,15 +38,15 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" \
 # --- bundled Python (Miniforge, relocatable, ships tkinter) ----------------
 echo ">> installing Miniforge into the AppDir"
 MF="Miniforge3-Linux-${ARCH}.sh"
-curl -L -o "/tmp/$MF" \
+retry curl -fL --retry 5 --retry-all-errors --retry-delay 5 -o "/tmp/$MF" \
     "https://github.com/conda-forge/miniforge/releases/latest/download/$MF"
 bash "/tmp/$MF" -b -p "$APPDIR/usr/conda"
 CPY="$APPDIR/usr/conda/bin/python"
-"$APPDIR/usr/conda/bin/conda" install -y -n base tk >/dev/null
+retry "$APPDIR/usr/conda/bin/conda" install -y -n base tk >/dev/null
 
 echo ">> installing pip requirements into the bundled Python"
-"$CPY" -m pip install --upgrade pip
-"$CPY" -m pip install -r installer/requirements.txt
+retry "$CPY" -m pip install --upgrade pip
+retry "$CPY" -m pip install --retries 5 -r installer/requirements.txt
 
 # shrink: drop caches, tests and pkg tarballs
 "$APPDIR/usr/conda/bin/conda" clean -afy >/dev/null || true
@@ -76,7 +89,7 @@ ln -sf mouse-mesh-pipeline.svg "$APPDIR/.DirIcon"
 # --- pack ------------------------------------------------------------------
 echo ">> packing AppImage"
 TOOL="/tmp/appimagetool-${ARCH}.AppImage"
-curl -L -o "$TOOL" \
+retry curl -fL --retry 5 --retry-all-errors --retry-delay 5 -o "$TOOL" \
     "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
 chmod +x "$TOOL"
 OUT="$DIST/mouse-mesh-pipeline-${VERSION}-${ARCH}.AppImage"
