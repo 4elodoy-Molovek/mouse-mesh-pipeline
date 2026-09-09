@@ -352,9 +352,15 @@ class PipelineManager(QtWidgets.QMainWindow):
         f.addWidget(self.env_metrics, 9, 0, 1, 2)
         f.addWidget(self.env_render, 10, 0, 1, 2)
         self.env_gw = QtWidgets.QCheckBox("Разделить мозг на серое/белое (эрозия)")
+        self.env_gw_mode = QtWidgets.QComboBox()
+        self.env_gw_mode.addItems(["толщина (мм)", "доля объёма"])
         self.env_gw_mm = _dspin(0.1, 5.0, 0.1, 2, 0.6)
+        self.env_gw_frac = _dspin(0.05, 0.95, 0.05, 2, 0.2)
         f.addWidget(self.env_gw, 11, 0, 1, 2)
-        self._grid(f, 12, "    Толщина серого (мм):", self.env_gw_mm)
+        self._grid(f, 12, "    Режим серого:", self.env_gw_mode)
+        self._grid(f, 13, "    Толщина серого (мм):", self.env_gw_mm)
+        self._grid(f, 14, "    Доля серого (0-1, 0.2=1/5):", self.env_gw_frac)
+        self.env_gw_mode.currentTextChanged.connect(self._gw_mode_changed)
         for key, w_ in (
             ("envelope_facet_size", self.env_facet),
             ("envelope_facet_dist", self.env_dist),
@@ -376,7 +382,33 @@ class PipelineManager(QtWidgets.QMainWindow):
         self._reg("envelope_render", self.env_render.isChecked, self.env_render.setChecked, False)
         self._reg("grey_white_split", self.env_gw.isChecked, self.env_gw.setChecked, False)
         self._reg("gw_grey_mm", self.env_gw_mm.value, self.env_gw_mm.setValue, 0.6)
+        self._reg(
+            "gw_grey_mode",
+            self.env_gw_mode.currentText,
+            self.env_gw_mode.setCurrentText,
+            "толщина (мм)",
+        )
+        # gw_grey_fraction is written only in fraction mode (None otherwise), so
+        # grey_white_split falls back to gw_grey_mm for thickness mode. Loading a
+        # config that carries a fraction flips the mode.
+        self._reg("gw_grey_fraction", self._gw_frac_get, self._gw_frac_set, None)
+        self._gw_mode_changed(self.env_gw_mode.currentText())
         return w
+
+    def _gw_frac_get(self):
+        return (
+            self.env_gw_frac.value() if self.env_gw_mode.currentText().startswith("доля") else None
+        )
+
+    def _gw_frac_set(self, v):
+        if v is not None:
+            self.env_gw_frac.setValue(float(v))
+            self.env_gw_mode.setCurrentText("доля объёма")
+
+    def _gw_mode_changed(self, text):
+        frac = text.startswith("доля")
+        self.env_gw_mm.setEnabled(not frac)
+        self.env_gw_frac.setEnabled(frac)
 
     def _page_remesh(self):
         w = QtWidgets.QWidget()

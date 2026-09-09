@@ -63,22 +63,41 @@ def _min_spacing(cfg: dict) -> float:
 def split_grey_white(
     vol: np.ndarray,
     brain_labels: list[int],
-    grey_vox: int,
     white_label: int,
     grey_label: int,
+    grey_vox: int | None = None,
+    grey_fraction: float | None = None,
 ) -> np.ndarray:
     """Return a copy of `vol` with the brain replaced by grey shell + white core.
 
     The brain is rebuilt as union(brain_labels + {white_label, grey_label}) so a
-    re-run reconstructs the whole brain before eroding again (idempotent). Holes
-    are filled first so the core is solid; erosion by `grey_vox` voxels carves the
-    white core, the remaining shell is grey.
+    re-run reconstructs the whole brain before splitting again (idempotent). Holes
+    are filled first so the core is solid. Two modes:
+      * fixed thickness (`grey_vox`): erode the brain by grey_vox voxels -> white
+        core, the remaining shell is grey.
+      * volume fraction (`grey_fraction`, 0-1, takes priority): the outer
+        `grey_fraction` of the brain BY VOLUME becomes grey and the deepest
+        1-grey_fraction becomes white, via an inward distance-transform threshold
+        (exact fraction regardless of shape/thickness).
     """
     wanted = set(int(l) for l in brain_labels) | {int(white_label), int(grey_label)}
     brain = ndi.binary_fill_holes(np.isin(vol, list(wanted)))
     if not brain.any():
         return vol.copy()
-    white = ndi.binary_erosion(brain, iterations=max(1, int(grey_vox)))
+    if grey_fraction is not None:
+        # exact volume fraction: the shallowest grey_fraction of the brain (by an
+        # inward distance transform) is grey, the deepest rest is white. A tiny
+        # smoothed term breaks distance ties so the cut splits the boundary shell
+        # smoothly and hits the fraction exactly -- a raw percentile would drop a
+        # whole discrete EDT shell on one side (~2% off for a mouse brain).
+        edt = ndi.distance_transform_edt(brain).astype(np.float64)
+        edt += 1e-3 * ndi.gaussian_filter(edt, 1.5)
+        vals = edt[brain]
+        n_grey = min(max(int(round(grey_fraction * vals.size)), 1), vals.size - 1)
+        thr = float(np.partition(vals, n_grey)[n_grey])
+        white = brain & (edt >= thr)
+    else:
+        white = ndi.binary_erosion(brain, iterations=max(1, int(grey_vox)))
     grey = brain & ~white
     out = vol.copy()
     out[grey] = grey_label
@@ -92,6 +111,12 @@ def main() -> int:
     ap.add_argument("--npy", help="explicit labeled .npy (overrides --config)")
     ap.add_argument("--out", help="output path (default: overwrite input)")
     ap.add_argument("--grey-mm", type=float, default=None, help="grey thickness in mm")
+    ap.add_argument(
+        "--grey-fraction",
+        type=float,
+        default=None,
+        help="grey as a fraction of brain volume (0-1); overrides --grey-mm",
+    )
     ap.add_argument(
         "--brain-labels",
         type=int,
@@ -124,17 +149,29 @@ def main() -> int:
     grey_label = (
         args.grey_label if args.grey_label is not None else int(cfg.get("gw_grey_label", 4))
     )
+    grey_fraction = (
+        args.grey_fraction if args.grey_fraction is not None else cfg.get("gw_grey_fraction")
+    )
+    grey_fraction = float(grey_fraction) if grey_fraction is not None else None
     grey_mm = args.grey_mm if args.grey_mm is not None else float(cfg.get("gw_grey_mm", 0.6))
     spacing = _min_spacing(cfg)
     grey_vox = max(1, round(grey_mm / spacing))
 
     print(f"Загрузка: {in_path}")
     vol = np.load(in_path)
-    print(
-        f"  brain labels={brain_labels}  grey={grey_mm} мм = {grey_vox} воксель "
-        f"(spacing {spacing:g} мм)  white->{white_label}  grey->{grey_label}"
+    if grey_fraction is not None:
+        print(
+            f"  brain labels={brain_labels}  grey={100*grey_fraction:.0f}% объёма мозга "
+            f"(white={100*(1-grey_fraction):.0f}%)  white->{white_label}  grey->{grey_label}"
+        )
+    else:
+        print(
+            f"  brain labels={brain_labels}  grey={grey_mm} мм = {grey_vox} воксель "
+            f"(spacing {spacing:g} мм)  white->{white_label}  grey->{grey_label}"
+        )
+    out = split_grey_white(
+        vol, brain_labels, white_label, grey_label, grey_vox=grey_vox, grey_fraction=grey_fraction
     )
-    out = split_grey_white(vol, brain_labels, grey_vox, white_label, grey_label)
 
     gv = int(np.count_nonzero(out == grey_label))
     wv = int(np.count_nonzero(out == white_label))
