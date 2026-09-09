@@ -42,7 +42,11 @@ retry curl -fL --retry 5 --retry-all-errors --retry-delay 5 -o "/tmp/$MF" \
     "https://github.com/conda-forge/miniforge/releases/latest/download/$MF"
 bash "/tmp/$MF" -b -p "$APPDIR/usr/conda"
 CPY="$APPDIR/usr/conda/bin/python"
-retry "$APPDIR/usr/conda/bin/conda" install -y -n base tk >/dev/null
+# Pin the bundled interpreter to 3.12: Miniforge "latest" tracks the newest
+# Python (currently 3.14), for which the pinned wheel set in requirements.txt
+# (vtk 9.5.2, pymeshlab, pymeshfix, …) has no cp3xx wheels yet, so pip resolution
+# fails. 3.12 has wheels for the whole pinned stack.
+retry "$APPDIR/usr/conda/bin/conda" install -y -n base "python=3.12" tk >/dev/null
 
 echo ">> installing pip requirements into the bundled Python"
 retry "$CPY" -m pip install --upgrade pip
