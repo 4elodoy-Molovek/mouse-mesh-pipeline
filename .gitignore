@@ -75,6 +75,10 @@ bin/macos/
 !report/*.png
 !report2/*.png
 
+# Literature reviews live only locally, not in git.
+review1_voxel_reconstruction/
+review2_mesh_improvement/
+
 # ── OS / editor ──────────────────────────────────────────
 .DS_Store
 Thumbs.db
