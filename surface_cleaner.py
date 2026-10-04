@@ -45,6 +45,23 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 
+def _write_vtk42(path, mesh):
+    """Write a legacy VTK file using the classic (pre-5.1) cell layout.
+
+    meshio and VTK 9 default to legacy version 5.1, which stores cells as
+    separate OFFSETS/CONNECTIVITY arrays. Many third-party readers understand
+    only the older CELLS block and silently report zero cells for such a file,
+    so the surface looks like a bare point cloud downstream. Version 4.2 keeps
+    the classic layout and stays readable everywhere.
+    """
+    try:
+        from meshio.vtk import _vtk_42
+
+        _vtk_42.write(path, mesh, binary=True)
+    except Exception:  # pragma: no cover - fall back to meshio's default writer
+        meshio.write(path, mesh)
+
+
 def _tri(path):
     import meshio
 
@@ -144,7 +161,7 @@ def _clean_file(job):
         decimate=decimate,
     )
     after = _metrics(P2, F2)
-    meshio.write(
+    _write_vtk42(
         os.path.join(out, name), meshio.Mesh(points=P2, cells=[meshio.CellBlock("triangle", F2)])
     )
     return (name, before, after)

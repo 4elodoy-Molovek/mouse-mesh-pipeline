@@ -58,6 +58,32 @@ _SLIVER_Q = 0.01  # normalised quality below this is treated as a sliver
 # ── low-level geometry ────────────────────────────────────────────────────
 
 
+def _safe_name(s):
+    """Tissue name usable in a filename: collapse whitespace to underscores.
+
+    Tissue names may contain spaces (e.g. "white matter"); spaces in file names
+    routinely break downstream converters and shell scripts.
+    """
+    return "_".join(str(s).split())
+
+
+def _write_vtk42(path, mesh):
+    """Write a legacy VTK file using the classic (pre-5.1) cell layout.
+
+    meshio and VTK 9 default to legacy version 5.1, which stores cells as
+    separate OFFSETS/CONNECTIVITY arrays. Many third-party readers understand
+    only the older CELLS block and silently report zero cells for such a file,
+    so the surface looks like a bare point cloud downstream. Version 4.2 keeps
+    the classic layout and stays readable everywhere.
+    """
+    try:
+        from meshio.vtk import _vtk_42
+
+        _vtk_42.write(path, mesh, binary=True)
+    except Exception:  # pragma: no cover - fall back to meshio's default writer
+        meshio.write(path, mesh)
+
+
 def _signed_vol6(pts: np.ndarray, tet: np.ndarray) -> np.ndarray:
     a, b, c, d = pts[tet[:, 0]], pts[tet[:, 1]], pts[tet[:, 2]], pts[tet[:, 3]]
     return np.einsum("ij,ij->i", np.cross(b - a, c - a), d - a)
@@ -394,9 +420,9 @@ def export_surfaces(path: str, out_dir: str, names: Optional[Dict[int, str]] = N
         used = np.unique(bnd)
         remap = np.zeros(len(pts), dtype=np.int64)
         remap[used] = np.arange(len(used))
-        nm = (names or {}).get(lbl, f"label_{lbl:02d}")
+        nm = _safe_name((names or {}).get(lbl, f"label_{lbl:02d}"))
         out = os.path.join(out_dir, f"surface_{lbl:02d}_{nm}.vtk")
-        meshio.write(
+        _write_vtk42(
             out, meshio.Mesh(points=pts[used], cells=[meshio.CellBlock("triangle", remap[bnd])])
         )
         saved.append(out)

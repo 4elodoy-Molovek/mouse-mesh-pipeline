@@ -54,6 +54,15 @@ sys.path.insert(0, HERE)
 # ── nesting ────────────────────────────────────────────────────────────────
 
 
+def _safe_name(s):
+    """Tissue name usable in a filename: collapse whitespace to underscores.
+
+    Tissue names may contain spaces (e.g. "white matter"); spaces in file names
+    routinely break downstream converters and shell scripts.
+    """
+    return "_".join(str(s).split())
+
+
 def _outside_air(vol: np.ndarray, wall: int) -> np.ndarray:
     """Voxels reachable from the true outside (border AIR) while treating tissue
     `wall` as an impassable barrier. Robust to the crop plane: only air voxels on
@@ -180,7 +189,7 @@ def nest_repair(out: str, parent: dict, names: dict, labels: list, clearance: fl
         return d
 
     def _path(L):
-        return os.path.join(out, f"surface_{L:02d}_{names.get(L, f'label_{L}')}.vtk")
+        return os.path.join(out, f"surface_{L:02d}_{_safe_name(names.get(L, f'label_{L}'))}.vtk")
 
     def _read(L):
         p = _path(L)
@@ -226,6 +235,7 @@ def nest_repair(out: str, parent: dict, names: dict, labels: list, clearance: fl
         if moved:
             pts.Modified()
             w = vtk.vtkUnstructuredGridWriter()
+            w.SetFileVersion(vtk.vtkDataWriter.VTK_LEGACY_READER_VERSION_4_2)
             w.SetFileName(_path(L))
             w.SetInputData(ug)
             w.Write()
@@ -408,7 +418,7 @@ def main() -> int:
     # 1) build every envelope region (+ optional tunnel sealing on roots)
     regions: dict[int, np.ndarray] = {}
     for L in labels:
-        nm = names.get(L, f"label_{L}")
+        nm = _safe_name(names.get(L, f"label_{L}"))
         region = envelope_region(vol, L, parent)
         if args.seal_tunnels and L in seal_set:
             before = int(region.sum())
@@ -493,7 +503,7 @@ def main() -> int:
         #    mesh_and_remesh.exe is single-threaded, so this scales with cores
         #    (capped for RAM — each CGAL mesh needs a few GB).
         def mesh_one(L: int) -> str:
-            nm = names.get(L, f"label_{L}")
+            nm = _safe_name(names.get(L, f"label_{L}"))
             npy_p = os.path.join(work, f"env_{L}.npy")
             inr_p = os.path.join(work, f"env_{L}.inr")
             mesh_p = os.path.join(work, f"env_{L}.mesh")
