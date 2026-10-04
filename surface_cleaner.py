@@ -59,6 +59,8 @@ def _write_vtk42(path, mesh):
 
         _vtk_42.write(path, mesh, binary=True)
     except Exception:  # pragma: no cover - fall back to meshio's default writer
+        import meshio
+
         meshio.write(path, mesh)
 
 
