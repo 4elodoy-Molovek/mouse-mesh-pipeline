@@ -171,6 +171,68 @@ def _clean_file(job):
     return (name, before, after)
 
 
+def _fix_degeneracies(P, F, merge_pct=0.05):
+    """Remove degenerate elements without ever sacrificing watertightness.
+
+    Needle triangles (a vertex pair far closer than the typical edge) inflate the
+    worst-case aspect ratio and make the face normal numerically unstable, which a
+    ray-triangle Monte-Carlo is sensitive to. Self-intersecting faces are cut out
+    and the opening re-sealed, but that result is kept only if the surface stays
+    closed: a watertight mesh with a couple of self-intersections is strictly
+    better than an open one, so every risky step can revert.
+
+    Returns (P, F, report).
+    """
+    import pymeshlab
+    import trimesh
+
+    def _closed(p, f):
+        try:
+            return bool(trimesh.Trimesh(p, f, process=False).is_watertight)
+        except Exception:
+            return False
+
+    rep = {"merged": 0, "selfx": -1, "reverted": False}
+    was_closed = _closed(P, F)
+
+    ms = pymeshlab.MeshSet()
+    ms.add_mesh(pymeshlab.Mesh(P.astype(np.float64), F.astype(np.int32)), "d")
+    for fn, kw in (
+        ("meshing_remove_duplicate_vertices", {}),
+        ("meshing_remove_duplicate_faces", {}),
+        ("meshing_remove_null_faces", {}),
+        ("meshing_remove_unreferenced_vertices", {}),
+        ("meshing_merge_close_vertices", {"threshold": pymeshlab.PercentageValue(merge_pct)}),
+        ("meshing_repair_non_manifold_edges", {}),
+    ):
+        try:
+            getattr(ms, fn)(**kw)
+        except Exception:
+            pass
+    m = ms.current_mesh()
+    P1, F1 = np.asarray(m.vertex_matrix()), np.asarray(m.face_matrix())
+    rep["merged"] = int(len(P) - len(P1))
+    if was_closed and not _closed(P1, F1):
+        rep["reverted"] = True
+        return P, F, rep
+
+    try:
+        ms.compute_selection_by_self_intersections_per_face()
+        n_sel = int(ms.current_mesh().selected_face_number())
+        rep["selfx"] = n_sel
+        if n_sel:
+            ms.meshing_remove_selected_faces()
+            m2 = ms.current_mesh()
+            P2, F2 = np.asarray(m2.vertex_matrix()), np.asarray(m2.face_matrix())
+            P2, F2 = _seal_per_component(P2, F2)
+            if _closed(P2, F2):
+                return P2, F2, rep
+            rep["reverted"] = True
+    except Exception:
+        pass
+    return P1, F1, rep
+
+
 def clean_surface(
     P,
     F,
@@ -243,6 +305,10 @@ def clean_surface(
             print("   [warn] remesh:", exc)
     m2 = ms2.current_mesh()
     P3, F3 = np.asarray(m2.vertex_matrix()), np.asarray(m2.face_matrix())
+    P3, F3, _deg = _fix_degeneracies(P3, F3)
+    if _deg["merged"] or _deg["selfx"] > 0:
+        tail = " (reverted, watertight kept)" if _deg["reverted"] else ""
+        print(f"   degeneracy: merged {_deg['merged']} verts, self-x {_deg['selfx']}{tail}")
     # Consistent OUTWARD winding — a surface/layer photon-MC keys reflection and
     # refraction off the face normal, so every surface must share one convention.
     try:

@@ -41,7 +41,7 @@ INFO.txt + atlas.npy
 | `*.py` (корень) | скрипты пайплайна (плоско, т.к. импортируют друг друга по имени) |
 | `build_envelopes.py` | сборщик вложенных оболочек (рекомендуемый путь для surface-MC) |
 | `mc_mesh_check.py` | проверка пригодности сеток для MC + экспорт поверхностей / MMC |
-| `surface_cleaner.py` | заливка watertight + сглаживание + нормали наружу + децимация |
+| `surface_cleaner.py` | заливка watertight + сглаживание + чистка вырожденных + нормали наружу + децимация |
 | `adaptive_smooth.py` | сглаживание по артефактам (веса по вершинам; бережёт борозды) |
 | `pipeline_manager.py` | GUI на PySide6 (Qt), оркестрирующий все режимы; `pipeline_manager_tk.py` — старый Tkinter |
 | `cgal_remesh/` | C++ CGAL-инструменты (`mesh_and_remesh.cpp`, `tet_remesh.cpp`) + `npy2inr.py` + сборка |
