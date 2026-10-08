@@ -115,6 +115,81 @@ def envelope_region(vol: np.ndarray, L: int, parent: dict[int, int]) -> np.ndarr
     return ndi.binary_fill_holes(np.isin(vol, members))
 
 
+def separate_siblings(regions: dict, parent: dict, gap_vox: int, names: dict = None):
+    """Make sibling envelopes disjoint, separated by a gap.
+
+    Siblings sharing a parent must not overlap: FindIntersectionLayer is given
+    only (surface, layer), so a point inside two sibling envelopes has no unique
+    layer. Envelope filling can make anatomically adjacent tissues overlap - on
+    the mouse brain the cerebrum envelope swallowed 22-27 per cent of each
+    neighbour - and even a clean touch leaves two surfaces coincident.
+
+    Contested voxels are given to the sibling whose own exclusive part is
+    nearest, then every region is pulled back by half the gap wherever it
+    approaches another sibling. Only voxels are ever removed, so each region
+    stays inside its parent. A region that falls apart keeps its largest piece.
+    """
+    from collections import defaultdict
+
+    groups = defaultdict(list)
+    for L in regions:
+        groups[parent.get(L, 0)].append(L)
+
+    report = []
+    for p, sibs in sorted(groups.items()):
+        if len(sibs) < 2:
+            continue
+        shape = regions[sibs[0]].shape
+
+        counts = np.zeros(shape, dtype=np.uint8)
+        for L in sibs:
+            counts += regions[L].astype(np.uint8)
+        contested = counts > 1
+        del counts
+        n_cont = int(contested.sum())
+        if n_cont:
+            best = np.full(shape, np.inf, dtype=np.float32)
+            win = np.zeros(shape, dtype=np.int16)
+            for i, L in enumerate(sibs):
+                excl = regions[L] & ~contested
+                if not excl.any():
+                    continue
+                d = ndi.distance_transform_edt(~excl).astype(np.float32)
+                take = d < best
+                best[take] = d[take]
+                win[take] = i
+                del d, excl, take
+            for i, L in enumerate(sibs):
+                regions[L] = (regions[L] & ~contested) | (contested & (win == i))
+            del best, win
+
+        if gap_vox > 0:
+            half = max(1, int(round(gap_vox / 2.0)))
+            orig = {L: regions[L].copy() for L in sibs}
+            for L in sibs:
+                others = np.zeros(shape, dtype=bool)
+                for M in sibs:
+                    if M != L:
+                        others |= orig[M]
+                if not others.any():
+                    continue
+                d = ndi.distance_transform_edt(~others)
+                # Strict: a voxel touching another sibling sits at distance 1, so
+                # ">= half" would keep it and carve nothing at all.
+                regions[L] = regions[L] & (d > half)
+                del others, d
+                lab, nc = ndi.label(regions[L])
+                if nc > 1:
+                    sizes = np.bincount(lab.ravel())
+                    sizes[0] = 0
+                    regions[L] = lab == int(sizes.argmax())
+                del lab
+            del orig
+
+        report.append((p, sibs, n_cont))
+    return regions, report
+
+
 def _ball(r: int) -> np.ndarray:
     L = np.arange(-r, r + 1)
     Z, Y, X = np.meshgrid(L, L, L, indexing="ij")
@@ -396,6 +471,13 @@ def main() -> int:
     ap.add_argument(
         "--voxel-only", action="store_true", help="only write region .npy, skip meshing"
     )
+    ap.add_argument(
+        "--sibling-gap",
+        type=int,
+        default=-1,
+        help="voxel gap forced between sibling envelopes (0 = off; "
+        "-1 = take envelope_sibling_gap from the config, default 0)",
+    )
     ap.add_argument("--keep-work", action="store_true", help="keep the per-tissue work dir")
     ap.add_argument(
         "--jobs",
@@ -489,6 +571,16 @@ def main() -> int:
     #    (brain -> skull -> skin). This is what stops the skull/brain from poking
     #    through the skin after independent per-surface Taubin smoothing, and
     #    also repairs skin that tunnel-sealing eroded thin over the orbit.
+    sib_gap = args.sibling_gap if args.sibling_gap >= 0 else int(cfg.get("envelope_sibling_gap", 0))
+    regions, sib_report = separate_siblings(regions, parent, sib_gap, names)
+    for p, sibs, n_cont in sib_report:
+        if n_cont or sib_gap > 0:
+            who = ", ".join(str(names.get(L, L)) for L in sibs)
+            print(
+                f"Siblings in {names.get(p, p) if p else 'air'}: {who} -- "
+                f"{n_cont} contested voxels reassigned, gap {sib_gap} vox"
+            )
+
     if args.nest_margin > 0:
         struct = _ball(args.nest_margin)
         for L in sorted(labels, key=lambda k: int(regions[k].sum())):
