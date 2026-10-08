@@ -432,11 +432,16 @@ class PipelineManager(QtWidgets.QMainWindow):
         self.surf_clean.setChecked(True)
         self.surf_taubin = _ispin(0, 300, 40)
         self.surf_minf = _ispin(0, 1_000_000, 1000)
+        self.surf_adaptive = QtWidgets.QCheckBox(
+            "Адаптивное сглаживание по артефактам (вместо равномерного Taubin)"
+        )
+        self.surf_adaptive.setChecked(True)
         self.export_mmc = QtWidgets.QCheckBox("Экспорт MMC (.node/.elem)")
         f.addWidget(self.surf_clean, 7, 0, 1, 2)
         self._grid(f, 8, "Surface Taubin:", self.surf_taubin)
         self._grid(f, 9, "Мин. граней компонента:", self.surf_minf)
-        f.addWidget(self.export_mmc, 10, 0, 1, 2)
+        f.addWidget(self.surf_adaptive, 10, 0, 1, 2)
+        f.addWidget(self.export_mmc, 11, 0, 1, 2)
         for key, w_ in (
             ("remesh_facet_size", self.rm_facet),
             ("remesh_facet_dist", self.rm_dist),
@@ -450,6 +455,12 @@ class PipelineManager(QtWidgets.QMainWindow):
         self._reg("surface_clean", self.surf_clean.isChecked, self.surf_clean.setChecked, True)
         self._reg("surface_taubin", self.surf_taubin.value, self.surf_taubin.setValue, 40)
         self._reg("surface_min_faces", self.surf_minf.value, self.surf_minf.setValue, 1000)
+        self._reg(
+            "surface_adaptive_smooth",
+            self.surf_adaptive.isChecked,
+            self.surf_adaptive.setChecked,
+            True,
+        )
         self._reg("export_mmc", self.export_mmc.isChecked, self.export_mmc.setChecked, False)
         return w
 
@@ -667,6 +678,8 @@ class PipelineManager(QtWidgets.QMainWindow):
             )
             if not self.env_seal.isChecked():
                 argv.append("--no-seal-tunnels")
+            if not self.surf_adaptive.isChecked():
+                argv.append("--uniform-smooth")
             if self.remesh_exe.text().strip():
                 argv += ["--exe", self.remesh_exe.text().strip()]
             if self.msys2_bin.text().strip():
@@ -747,7 +760,8 @@ class PipelineManager(QtWidgets.QMainWindow):
                         str(self._val("surface_taubin")),
                         "--min-faces",
                         str(self._val("surface_min_faces")),
-                    ],
+                    ]
+                    + ([] if self.surf_adaptive.isChecked() else ["--uniform-smooth"]),
                 )
             )
         return tasks

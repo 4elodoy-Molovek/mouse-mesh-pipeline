@@ -262,6 +262,11 @@ def main() -> int:
         "'envelope_cell_size', else 0.25. Use >= ~1.5 for 0.5 mm human voxels.",
     )
     ap.add_argument("--taubin", type=int, default=30, help="surface_cleaner smoothing iterations")
+    ap.add_argument(
+        "--uniform-smooth",
+        action="store_true",
+        help="use the old uniform Taubin pass instead of artifact-targeted smoothing",
+    )
     ap.add_argument("--min-faces", type=int, default=1000, help="drop components smaller than this")
     ap.add_argument(
         "--decimate",
@@ -583,7 +588,8 @@ def main() -> int:
                 str(args.decimate),
                 "--jobs",
                 str(args.jobs),
-            ],
+            ]
+            + (["--uniform-smooth"] if args.uniform_smooth else []),
             check=True,
         )
         if args.nest_repair:
