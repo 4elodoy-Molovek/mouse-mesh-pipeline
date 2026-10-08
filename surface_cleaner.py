@@ -300,7 +300,19 @@ def clean_surface(
         tl = pymeshlab.PureValue(target) if target > 0 else pymeshlab.PercentageValue(1.0)
         try:
             ms2.meshing_isotropic_explicit_remeshing(iterations=5, targetlen=tl, reprojectflag=True)
-            ms2.apply_coord_taubin_smoothing(stepsmoothnum=10)
+            # Polish the remeshed surface with the same strategy as the main pass:
+            # a uniform Taubin here would undo part of the fidelity the adaptive
+            # pass just preserved.
+            if adaptive:
+                from adaptive_smooth import smooth_surface
+
+                _m = ms2.current_mesh()
+                _P = np.asarray(_m.vertex_matrix())
+                _F = np.asarray(_m.face_matrix())
+                _P = smooth_surface(_P, _F.astype(np.int32), iters=10)[0]
+                ms2.add_mesh(pymeshlab.Mesh(_P, _F.astype(np.int32)), "remeshed")
+            else:
+                ms2.apply_coord_taubin_smoothing(stepsmoothnum=10)
         except Exception as exc:
             print("   [warn] remesh:", exc)
     m2 = ms2.current_mesh()
