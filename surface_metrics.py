@@ -108,6 +108,21 @@ def _geometry(verts, faces):
     amin = np.minimum(np.minimum(a0, a1), a2)
     amax = np.maximum(np.maximum(a0, a1), a2)
     edges = np.concatenate([la, lb, lc])
+
+    # Normalised shape quality alpha = 4*sqrt(3)*A / sum(edge^2): 1 on an
+    # equilateral triangle, 0 on a degenerate one. This is the indicator used in
+    # the mesh-quality literature alongside the radius ratio (see the review).
+    ssum = la**2 + lb**2 + lc**2
+    alpha = np.zeros_like(area)
+    ok2 = ssum > 0
+    alpha[ok2] = 4.0 * np.sqrt(3.0) * area[ok2] / ssum[ok2]
+
+    # Vertex valence over UNIQUE edges. A closed triangulation averages 6; the
+    # share of irregular vertices measures how structured the connectivity is.
+    e = np.sort(np.vstack([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), axis=1)
+    e = np.unique(e, axis=0)
+    val = np.bincount(e.ravel(), minlength=len(verts))
+
     return {
         "area_mm2": float(area.sum()),
         "tri_area_mean_mm2": float(area.mean()),
@@ -123,6 +138,13 @@ def _geometry(verts, faces):
         "sliver_pct": float(100.0 * np.mean(amin < SLIVER_ANGLE_DEG)),
         "aspect_mean": float(aspect.mean()) if aspect.size else -1.0,
         "aspect_p99": float(np.percentile(aspect, 99)) if aspect.size else -1.0,
+        "aspect_max": float(aspect.max()) if aspect.size else -1.0,
+        "shape_alpha_mean": float(alpha.mean()),
+        "shape_alpha_min": float(alpha.min()),
+        "shape_alpha_p01": float(np.percentile(alpha, 1)),
+        "edge_cv": float(edges.std() / edges.mean()) if edges.mean() > 0 else -1.0,
+        "valence_mean": float(val.mean()),
+        "valence_irregular_pct": float(100.0 * np.mean(val != 6)),
     }
 
 
@@ -278,6 +300,18 @@ def compute(
         rec = {"label": L, "name": name, "vertices": int(len(verts)), "faces": int(len(faces))}
         rec.update(_geometry(verts, faces))
         rec.update(_topology(verts, faces))
+        # Orientation: a surface photon-MC keys reflection off the face normal,
+        # so every surface must have one consistent OUTWARD convention. Positive
+        # signed volume with consistent winding means normals point outward.
+        try:
+            import trimesh as _tm
+
+            _t = _tm.Trimesh(verts, faces, process=False)
+            rec["winding_consistent"] = bool(_t.is_winding_consistent)
+            rec["normals_outward"] = bool(_t.volume > 0)
+        except Exception:
+            rec["winding_consistent"] = None
+            rec["normals_outward"] = None
 
         # (a) fidelity vs voxel envelope. Prefer the EXACT meshed region saved by
         # a --keep-work run (_metrics/regions or _work/env_L.npy); else rebuild the
@@ -315,8 +349,32 @@ def compute(
             rec["rms_raw_mm"] = rms_fr
             rec["mean_raw_mm"] = mean_fr
             rec["hausdorff_raw_mm"] = float(max(max_fr, max_rf))
+            # Integral distortion introduced by smoothing + decimation: how much
+            # enclosed volume and surface area moved away from the raw mesh.
+            try:
+                import trimesh as _tm
+
+                _rt = _tm.Trimesh(rv, rf, process=False)
+                a_raw = float(_rt.area)
+                # Enclosed volume is only meaningful on a closed, consistently
+                # wound mesh. The raw CGAL export is neither, so compare volumes
+                # only when it happens to be watertight; area is orientation
+                # independent and is always comparable.
+                v_raw = (
+                    abs(float(_rt.volume))
+                    if (_rt.is_watertight and _rt.is_winding_consistent)
+                    else 0.0
+                )
+                v_now = abs(float(rec.get("volume_mm3", -1.0)))
+                if v_raw > 0 and v_now > 0:
+                    rec["volume_change_pct"] = float(100.0 * (v_now - v_raw) / v_raw)
+                if a_raw > 0:
+                    rec["area_change_pct"] = float(100.0 * (rec["area_mm2"] - a_raw) / a_raw)
+            except Exception:
+                rec["volume_change_pct"] = rec["area_change_pct"] = None
         else:
             rec["rms_raw_mm"] = rec["mean_raw_mm"] = rec["hausdorff_raw_mm"] = None
+            rec["volume_change_pct"] = rec["area_change_pct"] = None
         results[L] = rec
 
     for L, rec in results.items():
