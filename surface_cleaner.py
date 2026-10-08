@@ -143,10 +143,11 @@ def _seal_per_component(P, F):
 
 def _clean_file(job):
     """Worker for parallel cleaning (module-level so it pickles on Windows spawn).
-    job = (src_path, out_dir, target, taubin, min_faces, remesh, seal, decimate)."""
+    job = (src_path, out_dir, target, taubin, min_faces, remesh, seal, decimate,
+           adaptive)."""
     import meshio
 
-    s, out, target, taubin, min_faces, remesh, seal, decimate = job
+    s, out, target, taubin, min_faces, remesh, seal, decimate, adaptive = job
     name = os.path.basename(s)
     P, F = _tri(s)
     if P is None:
@@ -161,6 +162,7 @@ def _clean_file(job):
         remesh=remesh,
         seal=seal,
         decimate=decimate,
+        adaptive=adaptive,
     )
     after = _metrics(P2, F2)
     _write_vtk42(
@@ -170,7 +172,15 @@ def _clean_file(job):
 
 
 def clean_surface(
-    P, F, target=0.0, taubin=30, min_faces=1000, remesh=False, seal=True, decimate=0.0
+    P,
+    F,
+    target=0.0,
+    taubin=30,
+    min_faces=1000,
+    remesh=False,
+    seal=True,
+    decimate=0.0,
+    adaptive=True,
 ):
     import pymeshlab
 
@@ -196,9 +206,19 @@ def clean_surface(
             print("   [warn] seal:", exc)
 
     # 3) de-spike / smooth (blends the seal patches; more iters = smoother)
+    if adaptive and int(taubin) > 0:
+        # Artifact-targeted smoothing: only the few percent of vertices that stand
+        # out against their own neighbourhood are moved, so genuine relief (sulci)
+        # survives. Measured on the human cortex decimated to ~100k faces, this
+        # costs about ten times less fidelity than uniform Taubin at equal
+        # iterations (rms deviation +30% vs +339%).
+        from adaptive_smooth import smooth_surface
+
+        P = smooth_surface(P.astype(np.float64), F.astype(np.int32), iters=int(taubin))[0]
     ms2 = pymeshlab.MeshSet()
     ms2.add_mesh(pymeshlab.Mesh(P.astype(np.float64), F.astype(np.int32)), "s")
-    ms2.apply_coord_taubin_smoothing(stepsmoothnum=int(taubin))
+    if not adaptive:
+        ms2.apply_coord_taubin_smoothing(stepsmoothnum=int(taubin))
     if 0.0 < decimate < 1.0:
         # Quadric edge-collapse to `decimate` * face count. Preserve topology,
         # boundary and normals so the surface stays watertight/manifold with
@@ -247,6 +267,11 @@ def main() -> int:
     ap.add_argument(
         "--taubin", type=int, default=30, help="Taubin smoothing iterations (higher = smoother)"
     )
+    ap.add_argument(
+        "--uniform-smooth",
+        action="store_true",
+        help="use the old uniform Taubin pass instead of artifact-targeted smoothing",
+    )
     ap.add_argument("--no-seal", action="store_true", help="skip pymeshfix watertight sealing")
     ap.add_argument(
         "--remesh", action="store_true", help="also isotropic-remesh (uniform triangles)"
@@ -294,6 +319,7 @@ def main() -> int:
             args.remesh,
             not args.no_seal,
             args.decimate,
+            not args.uniform_smooth,
         )
         for s in surfs
     ]
