@@ -358,6 +358,8 @@ class PipelineManager(QtWidgets.QMainWindow):
         w = QtWidgets.QWidget()
         f = QtWidgets.QGridLayout(w)
         f.setContentsMargins(0, 6, 0, 0)
+        self.env_backend = QtWidgets.QComboBox()
+        self.env_backend.addItems(["CGAL Mesh_3", "SurfaceNets (быстро)"])
         self.env_facet = _dspin(0.01, 5.0, 0.05, 3, 0.5)
         self.env_dist = _dspin(0.01, 5.0, 0.05, 3, 0.4)
         self.env_cell = _dspin(0.05, 10.0, 0.1, 3, 1.5)
@@ -368,28 +370,29 @@ class PipelineManager(QtWidgets.QMainWindow):
         self.env_nest = _ispin(0, 20, 2)
         self.env_jobs = _ispin(0, 64, 1)
         self.env_decim = _dspin(0.0, 1.0, 0.05, 2, 0.5)
-        self._grid(f, 0, "Facet size (мм):", self.env_facet)
-        self._grid(f, 1, "Facet distance (мм):", self.env_dist)
-        self._grid(f, 2, "Cell size (мм, объёмная сетка):", self.env_cell)
-        self._grid(f, 3, "Taubin (сглаживание):", self.env_taubin)
-        f.addWidget(self.env_seal, 4, 0, 1, 2)
-        self._grid(f, 5, "Радиус открытия (запечатка):", self.env_seal_r)
-        self._grid(f, 6, "Запас вложенности (воксели):", self.env_nest)
-        self._grid(f, 7, "Параллельных задач (0=авто):", self.env_jobs)
-        self._grid(f, 8, "Децимация (доля, 0.5=50%, 0=выкл):", self.env_decim)
+        self._grid(f, 0, "Генератор поверхностей:", self.env_backend)
+        self._grid(f, 1, "Facet size (мм):", self.env_facet)
+        self._grid(f, 2, "Facet distance (мм):", self.env_dist)
+        self._grid(f, 3, "Cell size (мм, объёмная сетка):", self.env_cell)
+        self._grid(f, 4, "Taubin (сглаживание):", self.env_taubin)
+        f.addWidget(self.env_seal, 5, 0, 1, 2)
+        self._grid(f, 6, "Радиус открытия (запечатка):", self.env_seal_r)
+        self._grid(f, 7, "Запас вложенности (воксели):", self.env_nest)
+        self._grid(f, 8, "Параллельных задач (0=авто):", self.env_jobs)
+        self._grid(f, 9, "Децимация (доля, 0.5=50%, 0=выкл):", self.env_decim)
         self.env_metrics = QtWidgets.QCheckBox("Считать метрики поверхностей (surface_metrics)")
         self.env_render = QtWidgets.QCheckBox("Сохранить рендеры (6 видов + разрез)")
-        f.addWidget(self.env_metrics, 9, 0, 1, 2)
-        f.addWidget(self.env_render, 10, 0, 1, 2)
+        f.addWidget(self.env_metrics, 10, 0, 1, 2)
+        f.addWidget(self.env_render, 11, 0, 1, 2)
         self.env_gw = QtWidgets.QCheckBox("Разделить мозг на серое/белое (эрозия)")
         self.env_gw_mode = QtWidgets.QComboBox()
         self.env_gw_mode.addItems(["толщина (мм)", "доля объёма"])
         self.env_gw_mm = _dspin(0.1, 5.0, 0.1, 2, 0.6)
         self.env_gw_frac = _dspin(0.05, 0.95, 0.05, 2, 0.2)
-        f.addWidget(self.env_gw, 11, 0, 1, 2)
-        self._grid(f, 12, "    Режим серого:", self.env_gw_mode)
-        self._grid(f, 13, "    Толщина серого (мм):", self.env_gw_mm)
-        self._grid(f, 14, "    Доля серого (0-1, 0.2=1/5):", self.env_gw_frac)
+        f.addWidget(self.env_gw, 12, 0, 1, 2)
+        self._grid(f, 13, "    Режим серого:", self.env_gw_mode)
+        self._grid(f, 14, "    Толщина серого (мм):", self.env_gw_mm)
+        self._grid(f, 15, "    Доля серого (0-1, 0.2=1/5):", self.env_gw_frac)
         self.env_gw_mode.currentTextChanged.connect(self._gw_mode_changed)
         for key, w_ in (
             ("envelope_facet_size", self.env_facet),
@@ -410,6 +413,12 @@ class PipelineManager(QtWidgets.QMainWindow):
             "envelope_metrics", self.env_metrics.isChecked, self.env_metrics.setChecked, False
         )
         self._reg("envelope_render", self.env_render.isChecked, self.env_render.setChecked, False)
+        self._reg(
+            "envelope_backend",
+            lambda: "surfacenets" if self.env_backend.currentIndex() else "cgal",
+            lambda v: self.env_backend.setCurrentIndex(1 if v == "surfacenets" else 0),
+            "cgal",
+        )
         self._reg("grey_white_split", self.env_gw.isChecked, self.env_gw.setChecked, False)
         self._reg("gw_grey_mm", self.env_gw_mm.value, self.env_gw_mm.setValue, 0.6)
         self._reg(
@@ -706,6 +715,7 @@ class PipelineManager(QtWidgets.QMainWindow):
                     str(self._val("envelope_decimate")),
                 ]
             )
+            argv += ["--backend", self._val("envelope_backend")]
             if not self.env_seal.isChecked():
                 argv.append("--no-seal-tunnels")
             if not self.surf_adaptive.isChecked():
